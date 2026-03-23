@@ -55,6 +55,9 @@ class PaperExecutor:
         queue = await self._event_bus.subscribe()
         logger.info("PaperExecutor started (capital: $%.2f)", self.portfolio.current_capital)
 
+        # Track latest prices per pair_id for resolution
+        self._latest_prices: dict[str, dict] = {}
+
         while self._running:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=2.0)
@@ -63,6 +66,12 @@ class PaperExecutor:
                 elif event.type == "leg2_opportunity":
                     await self._handle_leg2(event)
                 elif event.type == "price_update":
+                    # Track latest prices for resolution
+                    d = event.data
+                    self._latest_prices[d.get("pair_id", "")] = {
+                        "up": d.get("best_ask_up", 0),
+                        "down": d.get("best_ask_down", 0),
+                    }
                     await self._check_resolutions()
             except asyncio.TimeoutError:
                 await self._check_resolutions()
@@ -211,18 +220,31 @@ class PaperExecutor:
             if not trade.resolution_time or now < trade.resolution_time:
                 continue
 
+            # Determiner le resultat REEL en utilisant les derniers prix connus
+            # Quand un marche resolve, le cote gagnant → prix ~1.0, perdant → ~0.0
+            # On utilise le dernier prix Up connu pour determiner le vainqueur
+            last_prices = self._latest_prices.get(trade.pair_id, {})
+            last_up = last_prices.get("up", 0.5)
+            last_down = last_prices.get("down", 0.5)
+
+            # Le cote avec le prix le plus eleve a gagne
+            up_won = last_up >= last_down
+            winning_side = Side.UP if up_won else Side.DOWN
+
             if trade.status == TradeStatus.FULLY_HEDGED:
-                # Arb complet → payout garanti
-                min_shares = min(trade.leg1_shares, trade.leg2_shares or 0)
-                payout = min_shares * 1.0
+                # Arb complet → on a les deux cotes
+                # Le payout = shares du cote gagnant (l'autre = 0)
+                if winning_side == trade.leg1_side:
+                    payout = trade.leg1_shares * 1.0
+                else:
+                    payout = (trade.leg2_shares or 0) * 1.0
+
             elif trade.status == TradeStatus.LEG1_OPEN:
-                # Leg 1 seule → on a parie sur un seul cote
-                # 50/50 chance : soit on gagne (payout = shares), soit on perd (payout = 0)
-                # Pour le paper trading, on simule le resultat
-                # On utilise le prix comme proxy de probabilite
-                import random
-                won = random.random() < trade.leg1_price  # prix = proba implicite
-                payout = trade.leg1_shares * 1.0 if won else 0.0
+                # Leg 1 seule → on gagne seulement si notre cote a gagne
+                if winning_side == trade.leg1_side:
+                    payout = trade.leg1_shares * 1.0
+                else:
+                    payout = 0.0
             else:
                 continue
 
@@ -233,14 +255,13 @@ class PaperExecutor:
             trade.profit = round(profit, 4)
             trade.roi = round(roi, 4)
             trade.resolved_at = now
+            trade.resolution_outcome = winning_side.value
 
             if profit >= 0:
                 trade.status = TradeStatus.RESOLVED_WIN
-                trade.resolution_outcome = "win"
                 self.portfolio.winning_trades += 1
             else:
                 trade.status = TradeStatus.RESOLVED_LOSS
-                trade.resolution_outcome = "loss"
                 self.portfolio.losing_trades += 1
 
             self.portfolio.current_capital += payout
@@ -249,10 +270,12 @@ class PaperExecutor:
             resolved_ids.append(trade_id)
 
             logger.info(
-                "RESOLVED: %s | %s %s | %s | Payout=$%.4f Profit=$%.4f (%.2f%%)",
+                "RESOLVED: %s | %s %s | Winner=%s | Our leg1=%s | %s | Payout=$%.4f Profit=$%.4f (%.2f%%)",
                 trade_id,
                 trade.asset,
                 trade.timeframe,
+                winning_side.value,
+                trade.leg1_side.value,
                 trade.status.value,
                 payout,
                 profit,
