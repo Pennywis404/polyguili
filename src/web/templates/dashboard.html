@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block nav_dashboard %}text-white font-medium{% endblock %}
+
+{% block content %}
+<!-- Metrics -->
+<div id="metrics-section"
+     hx-get="/api/metrics"
+     hx-trigger="load, sse-refresh"
+     hx-swap="innerHTML">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+            <p class="text-gray-400 text-sm">Capital disponible</p>
+            <p class="text-2xl font-bold text-white">${{ "%.2f"|format(portfolio.current_capital) }}</p>
+        </div>
+        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+            <p class="text-gray-400 text-sm">P&L Total</p>
+            <p class="text-2xl font-bold {% if portfolio.total_pnl >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
+                ${{ "%.4f"|format(portfolio.total_pnl) }}
+            </p>
+        </div>
+        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+            <p class="text-gray-400 text-sm">Trades</p>
+            <p class="text-2xl font-bold text-white">{{ portfolio.active_positions|length }} / {{ portfolio.total_trades }}</p>
+        </div>
+        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
+            <p class="text-gray-400 text-sm">Win Rate</p>
+            <p class="text-2xl font-bold text-white">{{ "%.1f"|format(portfolio.win_rate) }}%</p>
+        </div>
+    </div>
+</div>
+
+<!-- Main Grid -->
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
+    <!-- Pairs (left) -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
+            <h2 class="font-semibold text-white">Marches Actifs</h2>
+            <span class="text-xs text-gray-500">{{ pairs|length }} paires</span>
+        </div>
+        <div id="pairs-section"
+             hx-get="/api/pairs"
+             hx-trigger="load, sse-refresh, every 5s"
+             hx-swap="innerHTML"
+             class="overflow-x-auto">
+            <p class="text-gray-500 text-center py-4">Chargement...</p>
+        </div>
+    </div>
+
+    <!-- Opportunities (center) -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-800">
+            <h2 class="font-semibold text-white">Opportunites</h2>
+        </div>
+        <div id="opps-section"
+             hx-get="/api/opportunities"
+             hx-trigger="load, sse-refresh, every 10s"
+             hx-swap="innerHTML"
+             class="overflow-x-auto max-h-80 overflow-y-auto">
+            <p class="text-gray-500 text-center py-4">En attente...</p>
+        </div>
+    </div>
+
+    <!-- Positions (right) -->
+    <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-800">
+            <h2 class="font-semibold text-white">Positions Ouvertes</h2>
+        </div>
+        <div id="positions-section"
+             hx-get="/api/positions"
+             hx-trigger="load, sse-refresh, every 3s"
+             hx-swap="innerHTML"
+             class="overflow-x-auto">
+            <p class="text-gray-500 text-center py-4">Aucune position</p>
+        </div>
+    </div>
+</div>
+
+<!-- P&L Chart -->
+<div class="mt-6 bg-gray-900 rounded-xl border border-gray-800 p-4">
+    <h2 class="font-semibold text-white mb-4">P&L Cumule</h2>
+    <div style="height: 250px;">
+        <canvas id="pnlChart"></canvas>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let pnlChart;
+    const initialData = {{ pnl_data | tojson }};
+
+    function initPnlChart() {
+        const ctx = document.getElementById('pnlChart').getContext('2d');
+        const labels = initialData.map(d => d.timestamp.substring(11, 19));
+        const values = initialData.map(d => d.pnl);
+
+        pnlChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'P&L ($)',
+                    data: values,
+                    borderColor: values[values.length-1] >= 0 ? '#4ade80' : '#f87171',
+                    backgroundColor: 'transparent',
+                    tension: 0.3,
+                    pointRadius: 2,
+                    borderWidth: 2,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: {
+                        grid: { color: '#1f2937' },
+                        ticks: { color: '#6b7280', maxTicksLimit: 10 }
+                    },
+                    y: {
+                        grid: { color: '#1f2937' },
+                        ticks: { color: '#6b7280' }
+                    }
+                }
+            }
+        });
+    }
+
+    async function refreshPnlChart() {
+        try {
+            const resp = await fetch('/api/pnl-data');
+            const data = await resp.json();
+            if (pnlChart && data.length > 0) {
+                pnlChart.data.labels = data.map(d => d.timestamp.substring(11, 19));
+                pnlChart.data.datasets[0].data = data.map(d => d.pnl);
+                const lastVal = data[data.length-1].pnl;
+                pnlChart.data.datasets[0].borderColor = lastVal >= 0 ? '#4ade80' : '#f87171';
+                pnlChart.update('none');
+            }
+        } catch (e) {
+            console.error('Failed to refresh PnL chart:', e);
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', initPnlChart);
+</script>
+{% endblock %}

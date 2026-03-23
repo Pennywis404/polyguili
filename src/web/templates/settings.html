@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+
+{% block nav_settings %}text-white font-medium{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+    <div class="bg-gray-900 rounded-xl border border-gray-800 p-6">
+        <h2 class="font-semibold text-white text-lg mb-4">Configuration</h2>
+        <p class="text-gray-500 text-sm mb-6">
+            Les parametres sont charges depuis <code class="text-purple-400">config.yaml</code> au demarrage.
+            Modifier le fichier et relancer le bot pour appliquer les changements.
+        </p>
+
+        <div class="space-y-4">
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h3 class="text-white font-medium mb-3">Strategie</h3>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-gray-400">Seuil arb simultane</p>
+                        <p class="text-white font-mono">0.98</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Combined cost target</p>
+                        <p class="text-white font-mono">0.97</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Leg1 max price</p>
+                        <p class="text-white font-mono">0.52</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Capital par trade</p>
+                        <p class="text-white font-mono">$100</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Max positions</p>
+                        <p class="text-white font-mono">5</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Min liquidite</p>
+                        <p class="text-white font-mono">$50</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h3 class="text-white font-medium mb-3">Monitoring</h3>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-gray-400">Poll interval</p>
+                        <p class="text-white font-mono">3s</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Pair refresh</p>
+                        <p class="text-white font-mono">60s</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Assets</p>
+                        <p class="text-white font-mono">BTC, ETH, SOL, XRP</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Timeframes</p>
+                        <p class="text-white font-mono">5min, 15min</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="bg-gray-800 rounded-lg p-4">
+                <h3 class="text-white font-medium mb-3">Portfolio</h3>
+                <div class="grid grid-cols-2 gap-3 text-sm">
+                    <div>
+                        <p class="text-gray-400">Capital initial</p>
+                        <p class="text-white font-mono">$10,000</p>
+                    </div>
+                    <div>
+                        <p class="text-gray-400">Persistence</p>
+                        <p class="text-white font-mono">JSON (60s interval)</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

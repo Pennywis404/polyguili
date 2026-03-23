@@ -1,0 +1,27 @@
+strategy:
+  simultaneous_arb_threshold: 0.98
+  leg1_max_price: 0.52
+  combined_cost_target: 0.97
+  capital_per_trade: 100
+  max_concurrent_positions: 5
+  min_time_to_resolution: 120
+  max_leg1_hold_time: 300
+  min_liquidity: 50
+
+monitoring:
+  poll_interval: 3
+  pair_refresh_interval: 60
+  assets: ["BTC", "ETH", "SOL", "XRP"]
+  timeframes: ["5min", "15min"]
+
+portfolio:
+  initial_capital: 10000
+
+web:
+  host: "127.0.0.1"
+  port: 8080
+
+persistence:
+  state_file: "data/state.json"
+  dump_interval: 60
+  backup_on_shutdown: true

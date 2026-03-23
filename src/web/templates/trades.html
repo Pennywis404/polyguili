@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block nav_trades %}text-white font-medium{% endblock %}
+
+{% block content %}
+<div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+    <div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between flex-wrap gap-3">
+        <h2 class="font-semibold text-white">Historique des Trades</h2>
+        <div class="flex items-center gap-3">
+            <!-- Filters -->
+            <form hx-get="/trades" hx-target="body" hx-push-url="true" class="flex gap-2 text-sm">
+                <select name="asset" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-300 text-xs">
+                    <option value="">Tous les assets</option>
+                    <option value="BTC" {% if filter_asset == "BTC" %}selected{% endif %}>BTC</option>
+                    <option value="ETH" {% if filter_asset == "ETH" %}selected{% endif %}>ETH</option>
+                    <option value="SOL" {% if filter_asset == "SOL" %}selected{% endif %}>SOL</option>
+                    <option value="XRP" {% if filter_asset == "XRP" %}selected{% endif %}>XRP</option>
+                </select>
+                <select name="status" class="bg-gray-800 border border-gray-700 rounded px-2 py-1 text-gray-300 text-xs">
+                    <option value="">Tous les statuts</option>
+                    <option value="fully_hedged" {% if filter_status == "fully_hedged" %}selected{% endif %}>Hedged</option>
+                    <option value="resolved_win" {% if filter_status == "resolved_win" %}selected{% endif %}>Win</option>
+                    <option value="resolved_loss" {% if filter_status == "resolved_loss" %}selected{% endif %}>Loss</option>
+                    <option value="expired" {% if filter_status == "expired" %}selected{% endif %}>Expired</option>
+                </select>
+                <button type="submit" class="bg-purple-600 hover:bg-purple-700 text-white px-3 py-1 rounded text-xs">
+                    Filtrer
+                </button>
+            </form>
+            <a href="/api/export/csv" class="bg-gray-700 hover:bg-gray-600 text-white px-3 py-1 rounded text-xs">
+                Export CSV
+            </a>
+        </div>
+    </div>
+
+    <div class="overflow-x-auto">
+        {% if trades %}
+        <table class="w-full text-sm">
+            <thead>
+                <tr class="text-gray-400 text-xs uppercase border-b border-gray-700">
+                    <th class="px-3 py-2 text-left">ID</th>
+                    <th class="px-3 py-2 text-left">Asset</th>
+                    <th class="px-3 py-2 text-left">TF</th>
+                    <th class="px-3 py-2 text-left">Status</th>
+                    <th class="px-3 py-2 text-left">L1 Prix</th>
+                    <th class="px-3 py-2 text-left">L2 Prix</th>
+                    <th class="px-3 py-2 text-left">Capital</th>
+                    <th class="px-3 py-2 text-left">Fees</th>
+                    <th class="px-3 py-2 text-left">Profit</th>
+                    <th class="px-3 py-2 text-left">ROI</th>
+                    <th class="px-3 py-2 text-left">Date</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for t in trades %}
+                <tr class="border-b border-gray-700/50 hover:bg-gray-700/30">
+                    <td class="px-3 py-2 font-mono text-xs text-gray-400">{{ t.id }}</td>
+                    <td class="px-3 py-2 text-white font-medium">{{ t.asset }}</td>
+                    <td class="px-3 py-2 text-gray-300">{{ t.timeframe }}</td>
+                    <td class="px-3 py-2">
+                        {% if t.status.value == "resolved_win" %}
+                            <span class="px-2 py-0.5 rounded text-xs bg-green-900/50 text-green-300">WIN</span>
+                        {% elif t.status.value == "resolved_loss" %}
+                            <span class="px-2 py-0.5 rounded text-xs bg-red-900/50 text-red-300">LOSS</span>
+                        {% elif t.status.value == "fully_hedged" %}
+                            <span class="px-2 py-0.5 rounded text-xs bg-blue-900/50 text-blue-300">HEDGED</span>
+                        {% elif t.status.value == "expired" %}
+                            <span class="px-2 py-0.5 rounded text-xs bg-gray-700 text-gray-400">EXPIRED</span>
+                        {% else %}
+                            <span class="px-2 py-0.5 rounded text-xs bg-yellow-900/50 text-yellow-300">{{ t.status.value }}</span>
+                        {% endif %}
+                    </td>
+                    <td class="px-3 py-2 text-gray-300">{{ "%.4f"|format(t.leg1_price) }}</td>
+                    <td class="px-3 py-2 text-gray-300">{{ "%.4f"|format(t.leg2_price) if t.leg2_price else "-" }}</td>
+                    <td class="px-3 py-2 text-gray-300">${{ "%.2f"|format(t.capital_deployed) }}</td>
+                    <td class="px-3 py-2 text-gray-400">${{ "%.4f"|format(t.total_fees) }}</td>
+                    <td class="px-3 py-2 {% if t.profit and t.profit >= 0 %}text-green-400{% elif t.profit %}text-red-400{% else %}text-gray-500{% endif %}">
+                        {{ "$%.4f"|format(t.profit) if t.profit is not none else "-" }}
+                    </td>
+                    <td class="px-3 py-2 {% if t.roi and t.roi >= 0 %}text-green-400{% elif t.roi %}text-red-400{% else %}text-gray-500{% endif %}">
+                        {{ "%.2f%%"|format(t.roi) if t.roi is not none else "-" }}
+                    </td>
+                    <td class="px-3 py-2 text-gray-500 text-xs">{{ t.leg1_timestamp.strftime('%m/%d %H:%M') }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-gray-500 text-center py-8">Aucun trade enregistre</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}
