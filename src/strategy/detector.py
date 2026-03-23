@@ -2,13 +2,14 @@
 Detection d'opportunites d'arbitrage temporel.
 
 Strategie :
-1. Quand Up < 0.50 → signal d'achat leg 1 (Up)
-2. Quand Down < 0.50 → signal d'achat leg 1 (Down)
-3. Si on a deja une leg 1 ouverte sur cette paire et que l'autre cote < 0.50
+1. Quand Up < 0.45 → signal d'achat leg 1 (Up)
+2. Quand Down < 0.45 → signal d'achat leg 1 (Down)
+3. Si on a deja une leg 1 ouverte sur cette paire et que l'autre cote < 0.45
    → signal de completion leg 2
+4. On ne rentre PAS apres 3 minutes (< 2 min restantes avant resolution)
 
-Le but : capturer chaque cote quand il passe sous 0.50.
-Combined < 1.00 = profit garanti au payout.
+Le but : capturer chaque cote quand il passe sous 0.45.
+Combined < 0.90 = profit garanti ~10%+ au payout.
 """
 import asyncio
 import logging
@@ -23,7 +24,7 @@ from src.core.models import MarketPair, Opportunity, PaperTrade, Side, TradeStat
 
 logger = logging.getLogger(__name__)
 
-ENTRY_THRESHOLD = 0.50  # Acheter un cote des qu'il passe sous ce seuil
+ENTRY_THRESHOLD = 0.45  # Acheter un cote des qu'il passe sous ce seuil
 
 
 class OpportunityDetector:

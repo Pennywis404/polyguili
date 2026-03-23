@@ -203,10 +203,21 @@ class PortfolioTracker:
         return list(self.pnl_series)
 
     def get_latest_prices(self) -> dict[str, dict]:
+        """Retourne les derniers prix par pair_id, uniquement les non-expires."""
+        now = datetime.now(timezone.utc)
         latest: dict[str, dict] = {}
         for entry in self.price_history:
             latest[entry["pair_id"]] = entry
-        return latest
+        # Filtrer: ne garder que les paires dont la resolution n'est pas passee
+        active: dict[str, dict] = {}
+        for pid, entry in latest.items():
+            try:
+                res = datetime.fromisoformat(entry.get("resolution_time", ""))
+                if res > now:
+                    active[pid] = entry
+            except (ValueError, TypeError):
+                pass
+        return active
 
     def get_chart_data(self, asset: Optional[str] = None) -> dict:
         """Retourne les donnees du chart pour un asset avec metadonnees du slot."""

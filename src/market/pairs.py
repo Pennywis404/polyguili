@@ -17,7 +17,9 @@ from src.core.models import MarketPair
 logger = logging.getLogger(__name__)
 
 # Pattern pour extraire asset et timeframe du slug
-SLUG_PATTERN = re.compile(r"^(\w+)-updown-(5m|15m)-(\d+)$")
+# Strict pattern: only match crypto-updown-{timeframe}-{timestamp}
+# Accepted timeframes: 5m, 15m (filtered further by config)
+SLUG_PATTERN = re.compile(r"^([a-z]+)-updown-(5m|15m)-(\d+)$")
 
 ASSET_MAP: dict[str, str] = {
     "btc": "BTC",
