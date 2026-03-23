@@ -154,6 +154,8 @@ function selectAsset(asset) {
 }
 
 // === Live Price Chart ===
+const WINDOW_POINTS = 100; // ~5 min a 3s/point — fenetre glissante
+
 function initPriceChart() {
     const ctx = document.getElementById('priceChart').getContext('2d');
     priceChart = new Chart(ctx, {
@@ -161,28 +163,67 @@ function initPriceChart() {
         data: {
             labels: [],
             datasets: [
-                { label: 'Up', data: [], borderColor: '#00d4aa', backgroundColor: 'rgba(0,212,170,0.05)', fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2 },
-                { label: 'Down', data: [], borderColor: '#ff4757', backgroundColor: 'rgba(255,71,87,0.05)', fill: true, tension: 0.4, pointRadius: 0, borderWidth: 2 },
-                { label: 'Combined', data: [], borderColor: 'rgba(150,150,150,0.4)', borderDash: [4,4], fill: false, tension: 0.1, pointRadius: 0, borderWidth: 1 }
+                {
+                    label: 'Up', data: [],
+                    borderColor: '#00d4aa',
+                    backgroundColor: 'rgba(0,212,170,0.08)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2.5,
+                    spanGaps: true,       // relier les points meme si gap
+                },
+                {
+                    label: 'Down', data: [],
+                    borderColor: '#ff4757',
+                    backgroundColor: 'rgba(255,71,87,0.08)',
+                    fill: true,
+                    tension: 0.3,
+                    pointRadius: 0,
+                    borderWidth: 2.5,
+                    spanGaps: true,
+                },
+                {
+                    label: 'Combined', data: [],
+                    borderColor: 'rgba(150,150,150,0.35)',
+                    borderDash: [5, 3],
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 0,
+                    borderWidth: 1,
+                    spanGaps: true,
+                }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { intersect: false, mode: 'index' },
-            animation: { duration: 200 },
+            animation: { duration: 150, easing: 'linear' },
+            transitions: { active: { animation: { duration: 0 } } },
             plugins: {
                 legend: { display: false },
                 tooltip: {
-                    backgroundColor: '#12131a', borderColor: 'rgba(255,255,255,0.1)', borderWidth: 1,
+                    backgroundColor: '#12131a',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
                     titleFont: { family: 'JetBrains Mono', size: 11 },
                     bodyFont: { family: 'JetBrains Mono', size: 11 },
                     callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(3)}` }
                 }
             },
             scales: {
-                x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#444', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 10 } },
-                y: { min: 0, max: 1.1, grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#444', font: { family: 'JetBrains Mono', size: 10 }, stepSize: 0.1 } }
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 8, maxRotation: 0 },
+                },
+                y: {
+                    min: 0, max: 1.1,
+                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 9 }, stepSize: 0.1,
+                        callback: (v) => v.toFixed(1)
+                    },
+                }
             }
         }
     });
@@ -191,8 +232,12 @@ function initPriceChart() {
 async function refreshPriceChart() {
     try {
         const resp = await fetch(`/api/chart-data?asset=${selectedAsset}`);
-        const data = await resp.json();
-        if (!data.length || !priceChart) return;
+        const raw = await resp.json();
+        if (!raw.length || !priceChart) return;
+
+        // Fenetre glissante : garder les N derniers points
+        const data = raw.slice(-WINDOW_POINTS);
+
         priceChart.data.labels = data.map(d => d.t.substring(11, 19));
         priceChart.data.datasets[0].data = data.map(d => d.up);
         priceChart.data.datasets[1].data = data.map(d => d.down);
