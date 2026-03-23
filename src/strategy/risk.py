@@ -2,7 +2,7 @@
 Fonctions pures de validation pre-trade.
 Chaque check retourne un bool, validate_trade les agrege.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 
 from src.core.models import MarketPair, PaperTrade, PortfolioState
 
@@ -43,7 +43,7 @@ def check_asset_concentration(
 
 
 def check_time_to_resolution(pair: MarketPair, min_seconds: int) -> bool:
-    remaining = (pair.resolution_time - datetime.utcnow()).total_seconds()
+    remaining = (pair.resolution_time - datetime.now(timezone.utc)).total_seconds()
     return remaining >= min_seconds
 
 
@@ -74,7 +74,7 @@ def validate_trade(
         return False, f"Concentration {pair.asset} trop elevee"
 
     if not check_time_to_resolution(pair, min_time):
-        remaining = (pair.resolution_time - datetime.utcnow()).total_seconds()
+        remaining = (pair.resolution_time - datetime.now(timezone.utc)).total_seconds()
         return False, f"Trop proche de la resolution ({remaining:.0f}s < {min_time}s)"
 
     if not check_liquidity(pair, min_liquidity):

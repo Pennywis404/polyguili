@@ -55,13 +55,13 @@ async def main() -> None:
     event_bus = EventBus()
 
     # Create API client
-    client = PolymarketClient(base_url=config.polymarket_api_url)
+    client = PolymarketClient(
+        clob_url=config.polymarket_api_url,
+        gamma_url="https://gamma-api.polymarket.com",
+    )
 
     # Create pair manager
-    pair_manager = PairManager(
-        target_assets=config.monitoring.assets,
-        target_timeframes=config.monitoring.timeframes,
-    )
+    pair_manager = PairManager(target_assets=config.monitoring.assets)
 
     # Create monitor
     monitor = MarketMonitor(

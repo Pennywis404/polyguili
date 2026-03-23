@@ -7,7 +7,7 @@ import json
 import logging
 import os
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -27,7 +27,7 @@ def save_state(
     """Sauvegarde atomique de l'etat dans un fichier JSON."""
     state = {
         "version": STATE_VERSION,
-        "saved_at": datetime.utcnow().isoformat(),
+        "saved_at": datetime.now(timezone.utc).isoformat(),
         "portfolio": portfolio.to_dict(),
         "trades": {tid: t.to_dict() for tid, t in trades.items()},
         "opportunities": [

@@ -6,7 +6,7 @@ Gere aussi la resolution des marches (payout).
 import asyncio
 import logging
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.core.events import Event, EventBus
@@ -111,7 +111,7 @@ class PaperExecutor:
         shares1 = shares_after_fee(stake1, p1)
         shares2 = shares_after_fee(stake2, p2)
 
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         trade_id = str(uuid.uuid4())[:8]
         leg1_side = opp.leg1_side
         leg2_side = Side.DOWN if leg1_side == Side.UP else Side.UP
@@ -165,7 +165,7 @@ class PaperExecutor:
 
     async def _check_resolutions(self) -> None:
         """Verifie si des trades hedges ont atteint leur resolution_time."""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         resolved_ids: list[str] = []
 
         for trade_id in list(self.portfolio.active_positions):

@@ -71,6 +71,12 @@ def load_config(path: str = "config.yaml") -> Config:
     web_raw = yaml_data.get("web", {})
     persistence_raw = yaml_data.get("persistence", {})
 
+    # Railway injects PORT env var — override config
+    if os.getenv("PORT"):
+        web_raw["port"] = int(os.getenv("PORT"))
+    if os.getenv("RAILWAY_ENVIRONMENT"):
+        web_raw["host"] = "0.0.0.0"
+
     # Convert lists to tuples for frozen dataclass
     if "assets" in monitoring_raw and isinstance(monitoring_raw["assets"], list):
         monitoring_raw["assets"] = tuple(monitoring_raw["assets"])

@@ -1,173 +1,109 @@
 """
-Detection et gestion des paires Up/Down pour les marches crypto Polymarket.
-Groupe les marches par asset + timeframe pour former des paires tradables.
+Detection des paires crypto Up/Down sur Polymarket.
+Les marches 5min/15min se creent dynamiquement avec le slug pattern:
+  {asset}-updown-{5m|15m}-{unix_timestamp}
+
+Chaque marche a deux outcomes: "Up" et "Down" avec des clobTokenIds.
+Pour l'arb temporel: on achete Up + Down si combined < 1.00.
 """
+import json
 import logging
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.core.models import MarketPair
 
 logger = logging.getLogger(__name__)
 
-# Pattern pour identifier les marches crypto Up/Down
-# Ex: "Will Bitcoin go up in the next 15 minutes?" ou "BTC 5-Minute Up"
-CRYPTO_PATTERN = re.compile(
-    r"(bitcoin|btc|ethereum|eth|solana|sol|xrp|ripple)",
-    re.IGNORECASE,
-)
-
-DIRECTION_PATTERN = re.compile(r"\b(up|down)\b", re.IGNORECASE)
-
-TIMEFRAME_PATTERN = re.compile(r"(\d+)\s*[-]?\s*min", re.IGNORECASE)
+# Pattern pour extraire asset et timeframe du slug
+SLUG_PATTERN = re.compile(r"^(\w+)-updown-(5m|15m)-(\d+)$")
 
 ASSET_MAP: dict[str, str] = {
-    "bitcoin": "BTC",
     "btc": "BTC",
-    "ethereum": "ETH",
     "eth": "ETH",
-    "solana": "SOL",
     "sol": "SOL",
     "xrp": "XRP",
-    "ripple": "XRP",
+    "doge": "DOGE",
+    "bnb": "BNB",
+    "hype": "HYPE",
 }
 
 
-def _parse_asset(question: str) -> Optional[str]:
-    match = CRYPTO_PATTERN.search(question)
-    if not match:
-        return None
-    return ASSET_MAP.get(match.group(1).lower())
-
-
-def _parse_direction(question: str) -> Optional[str]:
-    match = DIRECTION_PATTERN.search(question)
-    if not match:
-        return None
-    return match.group(1).lower()
-
-
-def _parse_timeframe(question: str) -> Optional[str]:
-    match = TIMEFRAME_PATTERN.search(question)
-    if not match:
-        return None
-    minutes = match.group(1)
-    return f"{minutes}min"
-
-
 class PairManager:
-    def __init__(self, target_assets: tuple[str, ...], target_timeframes: tuple[str, ...]) -> None:
+    def __init__(self, target_assets: tuple[str, ...] = ("BTC", "ETH", "SOL", "XRP")) -> None:
         self._target_assets = set(target_assets)
-        self._target_timeframes = set(target_timeframes)
 
-    def refresh_pairs(self, markets: list[dict]) -> list[MarketPair]:
+    def build_pairs_from_markets(self, markets: list[dict]) -> list[MarketPair]:
         """
-        A partir des marches bruts de l'API, identifier et construire les paires Up/Down.
-        Groupe par group_id d'abord, puis par parsing de la question en fallback.
+        Construit des MarketPair a partir des marches Gamma API.
+        Filtre uniquement les marches crypto Up/Down correspondant aux assets cibles.
         """
-        # Grouper par group_id si disponible
-        groups: dict[str, list[dict]] = {}
-        ungrouped: list[dict] = []
-
-        for market in markets:
-            if not market.get("active", True) or market.get("closed", False):
-                continue
-            if not market.get("enable_order_book", market.get("enableOrderBook", True)):
-                continue
-
-            group_id = market.get("group_id")
-            if group_id:
-                groups.setdefault(group_id, []).append(market)
-            else:
-                ungrouped.append(market)
-
         pairs: list[MarketPair] = []
 
-        # D'abord traiter les groupes
-        for group_id, group_markets in groups.items():
-            pair = self._try_build_pair_from_group(group_markets)
+        for market in markets:
+            slug = market.get("slug", "")
+            match = SLUG_PATTERN.match(slug)
+            if not match:
+                continue
+
+            asset_key, timeframe_key, timestamp_str = match.groups()
+            asset = ASSET_MAP.get(asset_key)
+            if not asset or asset not in self._target_assets:
+                continue
+
+            timeframe = "5min" if timeframe_key == "5m" else "15min"
+
+            pair = self._build_pair(market, asset, timeframe)
             if pair:
                 pairs.append(pair)
 
-        # Puis traiter les marches sans group_id par parsing
-        pairs.extend(self._build_pairs_from_parsing(ungrouped))
-
-        logger.info("Found %d active pairs: %s", len(pairs), [(p.asset, p.timeframe) for p in pairs])
+        logger.info(
+            "Found %d crypto Up/Down pairs: %s",
+            len(pairs),
+            [(p.asset, p.timeframe) for p in pairs],
+        )
         return pairs
 
-    def _try_build_pair_from_group(self, group_markets: list[dict]) -> Optional[MarketPair]:
-        """Essaie de construire une paire a partir d'un groupe de marches."""
-        up_market: Optional[dict] = None
-        down_market: Optional[dict] = None
-        asset: Optional[str] = None
-        timeframe: Optional[str] = None
-
-        for market in group_markets:
-            question = market.get("question", "")
-            parsed_asset = _parse_asset(question)
-            direction = _parse_direction(question)
-            parsed_tf = _parse_timeframe(question)
-
-            if parsed_asset:
-                asset = parsed_asset
-            if parsed_tf:
-                timeframe = parsed_tf
-
-            if direction == "up":
-                up_market = market
-            elif direction == "down":
-                down_market = market
-
-        if not (up_market and down_market and asset and timeframe):
-            return None
-        if asset not in self._target_assets or timeframe not in self._target_timeframes:
-            return None
-
-        return self._build_pair(asset, timeframe, up_market, down_market)
-
-    def _build_pairs_from_parsing(self, markets: list[dict]) -> list[MarketPair]:
-        """Construit des paires en parsant les questions des marches individuels."""
-        # Grouper par (asset, timeframe, end_date)
-        buckets: dict[tuple[str, str, str], dict[str, dict]] = {}
-
-        for market in markets:
-            question = market.get("question", "")
-            asset = _parse_asset(question)
-            direction = _parse_direction(question)
-            timeframe = _parse_timeframe(question)
-            end_date = market.get("end_date_iso", "")
-
-            if not (asset and direction and timeframe and end_date):
-                continue
-            if asset not in self._target_assets or timeframe not in self._target_timeframes:
-                continue
-
-            key = (asset, timeframe, end_date)
-            buckets.setdefault(key, {})
-            buckets[key][direction] = market
-
-        pairs: list[MarketPair] = []
-        for (asset, timeframe, _), sides in buckets.items():
-            if "up" in sides and "down" in sides:
-                pair = self._build_pair(asset, timeframe, sides["up"], sides["down"])
-                if pair:
-                    pairs.append(pair)
-
-        return pairs
-
-    def _build_pair(self, asset: str, timeframe: str, up_market: dict, down_market: dict) -> Optional[MarketPair]:
-        """Construit un MarketPair a partir de deux marches Up et Down."""
+    def _build_pair(self, market: dict, asset: str, timeframe: str) -> Optional[MarketPair]:
+        """Construit un MarketPair a partir d'un marche Gamma crypto Up/Down."""
         try:
-            token_id_up = self._extract_token_id(up_market)
-            token_id_down = self._extract_token_id(down_market)
+            outcomes_raw = market.get("outcomes", "[]")
+            clob_ids_raw = market.get("clobTokenIds", "[]")
+            prices_raw = market.get("outcomePrices", "[]")
 
-            end_date_str = up_market.get("end_date_iso", down_market.get("end_date_iso", ""))
-            if not end_date_str:
+            outcomes = json.loads(outcomes_raw) if isinstance(outcomes_raw, str) else outcomes_raw
+            clob_ids = json.loads(clob_ids_raw) if isinstance(clob_ids_raw, str) else clob_ids_raw
+            prices = json.loads(prices_raw) if isinstance(prices_raw, str) else prices_raw
+
+            if len(outcomes) != 2 or len(clob_ids) != 2:
                 return None
 
-            resolution_time = datetime.fromisoformat(end_date_str.replace("Z", "+00:00"))
-            pair_id = f"{asset}_{timeframe}_{end_date_str}"
+            # Identifier Up et Down
+            up_idx = None
+            down_idx = None
+            for i, outcome in enumerate(outcomes):
+                if outcome.lower() == "up":
+                    up_idx = i
+                elif outcome.lower() == "down":
+                    down_idx = i
+
+            if up_idx is None or down_idx is None:
+                return None
+
+            token_id_up = clob_ids[up_idx]
+            token_id_down = clob_ids[down_idx]
+            price_up = float(prices[up_idx]) if prices else 0.0
+            price_down = float(prices[down_idx]) if prices else 0.0
+
+            end_date = market.get("endDate", market.get("end_date_iso", ""))
+            if end_date:
+                resolution_time = datetime.fromisoformat(end_date.replace("Z", "+00:00"))
+            else:
+                return None
+
+            condition_id = market.get("conditionId", market.get("condition_id", ""))
+            pair_id = f"{asset}_{timeframe}_{end_date}"
 
             return MarketPair(
                 pair_id=pair_id,
@@ -175,32 +111,15 @@ class PairManager:
                 timeframe=timeframe,
                 token_id_up=token_id_up,
                 token_id_down=token_id_down,
-                condition_id_up=up_market.get("condition_id", ""),
-                condition_id_down=down_market.get("condition_id", ""),
+                condition_id_up=condition_id,
+                condition_id_down=condition_id,
                 resolution_time=resolution_time,
+                price_up=price_up,
+                price_down=price_down,
             )
-        except (KeyError, ValueError, IndexError) as e:
-            logger.warning("Failed to build pair %s %s: %s", asset, timeframe, e)
+        except (KeyError, ValueError, IndexError, json.JSONDecodeError) as e:
+            logger.debug("Failed to build pair from %s: %s", market.get("slug", "?"), e)
             return None
-
-    @staticmethod
-    def _extract_token_id(market: dict) -> str:
-        """Extrait le token_id Yes d'un marche."""
-        tokens = market.get("tokens", [])
-        if tokens:
-            # Le premier token avec outcome "Yes"
-            for token in tokens:
-                if token.get("outcome", "").lower() == "yes":
-                    return token["token_id"]
-            # Fallback: premier token
-            return tokens[0]["token_id"]
-
-        # Fallback: clobTokenIds
-        clob_ids = market.get("clobTokenIds", [])
-        if clob_ids:
-            return clob_ids[0]
-
-        raise ValueError(f"No token_id found for market {market.get('condition_id', 'unknown')}")
 
     @staticmethod
     def update_prices(pair: MarketPair, book_up: dict, book_down: dict) -> MarketPair:
@@ -210,7 +129,6 @@ class PairManager:
         ask_size_up = _extract_ask_size(book_up)
         ask_size_down = _extract_ask_size(book_down)
 
-        # Midpoint
         best_bid_up = _extract_best_bid(book_up)
         best_bid_down = _extract_best_bid(book_down)
         price_up = (best_ask_up + best_bid_up) / 2 if best_bid_up > 0 else best_ask_up
@@ -231,26 +149,36 @@ class PairManager:
             best_ask_down=best_ask_down,
             ask_size_up=ask_size_up,
             ask_size_down=ask_size_down,
-            last_update=datetime.utcnow(),
+            last_update=datetime.now(timezone.utc),
         )
 
 
 def _extract_best_ask(book: dict) -> float:
+    """
+    Best ask = prix le plus bas auquel on peut acheter.
+    Sur Polymarket CLOB, les asks sont triees du plus cher au moins cher,
+    donc le best ask est le DERNIER element de la liste.
+    """
     asks = book.get("asks", [])
     if not asks:
         return 0.0
-    return float(asks[0].get("price", 0))
+    return float(asks[-1].get("price", 0))
 
 
 def _extract_best_bid(book: dict) -> float:
+    """
+    Best bid = prix le plus haut auquel on peut vendre.
+    Les bids sont triees du moins cher au plus cher,
+    donc le best bid est le DERNIER element.
+    """
     bids = book.get("bids", [])
     if not bids:
         return 0.0
-    return float(bids[0].get("price", 0))
+    return float(bids[-1].get("price", 0))
 
 
 def _extract_ask_size(book: dict) -> float:
     asks = book.get("asks", [])
     if not asks:
         return 0.0
-    return float(asks[0].get("size", 0))
+    return float(asks[-1].get("size", 0))

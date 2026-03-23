@@ -3,7 +3,7 @@ Routes du dashboard — pages HTML + endpoints API pour HTMX.
 """
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Request
@@ -188,7 +188,7 @@ async def api_positions(request: Request):
     for trade in active:
         remaining = ""
         if trade.resolution_time:
-            delta = (trade.resolution_time - datetime.utcnow()).total_seconds()
+            delta = (trade.resolution_time - datetime.now(timezone.utc)).total_seconds()
             if delta > 0:
                 mins, secs = divmod(int(delta), 60)
                 remaining = f"{mins}m{secs:02d}s"

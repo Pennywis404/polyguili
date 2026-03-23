@@ -4,7 +4,7 @@ Server-Sent Events endpoint pour les mises a jour temps reel.
 import asyncio
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Request
 from sse_starlette.sse import EventSourceResponse
@@ -34,7 +34,7 @@ async def event_stream(request: Request):
                     # Keepalive
                     yield {
                         "event": "keepalive",
-                        "data": json.dumps({"time": datetime.utcnow().isoformat()}),
+                        "data": json.dumps({"time": datetime.now(timezone.utc).isoformat()}),
                     }
         finally:
             await event_bus.unsubscribe(queue)

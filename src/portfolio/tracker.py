@@ -6,7 +6,7 @@ Expose les donnees pour le dashboard.
 import asyncio
 import logging
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.core.events import Event, EventBus
@@ -36,7 +36,7 @@ class PortfolioTracker:
 
         # Snapshot initial du P&L
         self.pnl_series.append({
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "pnl": self.portfolio.total_pnl,
             "capital": self.portfolio.current_capital,
         })
@@ -72,7 +72,7 @@ class PortfolioTracker:
 
         elif event.type == "trade_resolved":
             self.pnl_series.append({
-                "timestamp": datetime.utcnow().isoformat(),
+                "timestamp": datetime.now(timezone.utc).isoformat(),
                 "pnl": self.portfolio.total_pnl,
                 "capital": self.portfolio.current_capital,
             })

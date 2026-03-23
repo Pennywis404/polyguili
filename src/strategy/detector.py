@@ -6,7 +6,7 @@ import asyncio
 import logging
 import uuid
 from collections import deque
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.core.events import Event, EventBus
@@ -76,7 +76,7 @@ class OpportunityDetector:
         # Mettre a jour le buffer de prix
         if pair_id not in self._price_buffers:
             self._price_buffers[pair_id] = deque(maxlen=PRICE_BUFFER_SIZE)
-        self._price_buffers[pair_id].append((datetime.utcnow(), best_ask_up, best_ask_down))
+        self._price_buffers[pair_id].append((datetime.now(timezone.utc), best_ask_up, best_ask_down))
 
         # Trouver la paire correspondante
         pair = self._find_pair(pair_id)
@@ -84,7 +84,7 @@ class OpportunityDetector:
             return
 
         # Verifier le temps restant
-        remaining = (pair.resolution_time - datetime.utcnow()).total_seconds()
+        remaining = (pair.resolution_time - datetime.now(timezone.utc)).total_seconds()
         if remaining < self._min_time_to_resolution:
             return
 
@@ -123,7 +123,7 @@ class OpportunityDetector:
         liquidity: float,
     ) -> None:
         # Eviter les doublons (1 opp par paire par 30 secondes)
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         last = self._recent_opps.get(pair.pair_id)
         if last and (now - last).total_seconds() < 30:
             return
