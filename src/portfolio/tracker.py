@@ -6,7 +6,7 @@ Expose les donnees pour le dashboard.
 import asyncio
 import logging
 from collections import deque, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from src.core.events import Event, EventBus
@@ -17,7 +17,6 @@ logger = logging.getLogger(__name__)
 MAX_PRICE_HISTORY = 1000
 MAX_OPPORTUNITIES = 200
 MAX_PNL_SERIES = 500
-MAX_CHART_POINTS = 300  # ~15 min a 3s/point
 
 
 class PortfolioTracker:
@@ -35,11 +34,15 @@ class PortfolioTracker:
         self.pnl_series: deque[dict] = deque(maxlen=MAX_PNL_SERIES)
         self._running = False
 
-        # Per-ASSET price chart data: asset -> deque of {t, up, down, combined}
-        # Keyed by asset (not pair_id) so data persists across market rotations
-        self.chart_data: dict[str, deque] = defaultdict(lambda: deque(maxlen=MAX_CHART_POINTS))
-        # Track nearest-to-resolution pair per asset to avoid mixing slots
-        self._nearest_pair: dict[str, str] = {}
+        # Chart data per ASSET — tracks the CURRENT active 5min slot only
+        # asset -> list of {s: seconds_elapsed, up: float, down: float}
+        self.chart_data: dict[str, list[dict]] = defaultdict(list)
+        # Track which slot (pair_id) is active per asset
+        self._active_slot: dict[str, str] = {}
+        # Resolution time of active slot per asset
+        self._active_slot_resolution: dict[str, str] = {}
+        # Latest prices per asset (for display)
+        self._latest_price: dict[str, dict] = {}
 
         # Snapshot initial du P&L
         self.pnl_series.append({
@@ -68,45 +71,7 @@ class PortfolioTracker:
     def _handle_event(self, event: Event) -> None:
         if event.type == "price_update":
             self.price_history.append(event.data)
-            d = event.data
-            asset = d.get("asset", "")
-            up = d.get("best_ask_up", 0)
-            down = d.get("best_ask_down", 0)
-            combined = d.get("combined_cost", 0)
-            pair_id = d.get("pair_id", "")
-            resolution = d.get("resolution_time", "")
-
-            # Skip garbage prices
-            if up < 0.01 or down < 0.01 or up > 0.99 or down > 0.99:
-                return
-
-            # Only record from the nearest-to-resolution pair per asset
-            # This avoids mixing the active slot (real prices) with future slots (0.50/0.50)
-            now_iso = datetime.now(timezone.utc).isoformat()
-            current_nearest = self._nearest_pair.get(asset)
-            if current_nearest is None or resolution <= current_nearest or resolution == current_nearest:
-                self._nearest_pair[asset] = resolution
-                self.chart_data[asset].append({
-                    "t": now_iso,
-                    "up": up,
-                    "down": down,
-                    "combined": combined,
-                })
-            # When a market resolves and a new one becomes nearest, update
-            elif resolution > current_nearest:
-                # Check if old one has expired
-                try:
-                    old_res = datetime.fromisoformat(current_nearest)
-                    if datetime.now(timezone.utc) > old_res:
-                        self._nearest_pair[asset] = resolution
-                        self.chart_data[asset].append({
-                            "t": now_iso,
-                            "up": up,
-                            "down": down,
-                            "combined": combined,
-                        })
-                except (ValueError, TypeError):
-                    pass
+            self._process_chart_point(event.data)
 
         elif event.type == "opportunity_detected":
             try:
@@ -121,6 +86,84 @@ class PortfolioTracker:
                 "pnl": self.portfolio.total_pnl,
                 "capital": self.portfolio.current_capital,
             })
+
+    def _process_chart_point(self, data: dict) -> None:
+        """Process a price update into a chart point with elapsed seconds."""
+        asset = data.get("asset", "")
+        pair_id = data.get("pair_id", "")
+        resolution = data.get("resolution_time", "")
+        up = data.get("best_ask_up", 0)
+        down = data.get("best_ask_down", 0)
+
+        if not asset or not resolution:
+            return
+        # Skip garbage prices
+        if up < 0.01 or down < 0.01 or up > 0.99 or down > 0.99:
+            return
+
+        now = datetime.now(timezone.utc)
+
+        # Determine the active slot for this asset:
+        # Pick the slot closest to resolution that hasn't expired yet
+        try:
+            res_dt = datetime.fromisoformat(resolution)
+        except (ValueError, TypeError):
+            return
+
+        if res_dt < now:
+            return  # Already expired
+
+        current_slot = self._active_slot.get(asset)
+        current_res = self._active_slot_resolution.get(asset, "")
+
+        if current_slot is None:
+            # First slot for this asset
+            self._active_slot[asset] = pair_id
+            self._active_slot_resolution[asset] = resolution
+            self.chart_data[asset] = []
+        elif pair_id != current_slot:
+            # Different pair_id — check if current slot expired
+            try:
+                current_res_dt = datetime.fromisoformat(current_res)
+                if now >= current_res_dt:
+                    # Current slot expired → switch to new slot, RESET chart
+                    self._active_slot[asset] = pair_id
+                    self._active_slot_resolution[asset] = resolution
+                    self.chart_data[asset] = []
+                    logger.info("Chart reset for %s — new slot %s", asset, pair_id[:20])
+                elif resolution < current_res:
+                    # This pair resolves sooner → switch to it
+                    self._active_slot[asset] = pair_id
+                    self._active_slot_resolution[asset] = resolution
+                    self.chart_data[asset] = []
+                else:
+                    return  # This is a future slot, ignore
+            except (ValueError, TypeError):
+                return
+
+        # Only record points from the active slot
+        if pair_id != self._active_slot.get(asset):
+            return
+
+        # Calculate seconds elapsed since market start (resolution - 5min)
+        market_start = res_dt - timedelta(minutes=5)
+        elapsed = (now - market_start).total_seconds()
+        elapsed = max(0.0, min(300.0, elapsed))
+
+        self.chart_data[asset].append({
+            "s": round(elapsed, 1),
+            "up": up,
+            "down": down,
+        })
+
+        # Store latest price
+        self._latest_price[asset] = {
+            "up": up,
+            "down": down,
+            "resolution_time": resolution,
+            "pair_id": pair_id,
+            "elapsed": elapsed,
+        }
 
     # --- Methodes de requete pour le dashboard ---
 
@@ -165,20 +208,35 @@ class PortfolioTracker:
             latest[entry["pair_id"]] = entry
         return latest
 
-    def get_chart_data(self, asset: Optional[str] = None) -> list[dict]:
-        """Retourne les donnees du chart pour un asset (ou le premier trouve)."""
-        if asset and asset in self.chart_data:
-            return list(self.chart_data[asset])
-        # Fallback: premier asset avec des points
-        for a, data in self.chart_data.items():
-            if data:
-                return list(data)
-        return []
+    def get_chart_data(self, asset: Optional[str] = None) -> dict:
+        """Retourne les donnees du chart pour un asset avec metadonnees du slot."""
+        target = asset or next(iter(self._active_slot), None)
+        if not target:
+            return {"points": [], "asset": "", "resolution_time": "", "elapsed": 0, "total": 300}
+
+        resolution = self._active_slot_resolution.get(target, "")
+        latest = self._latest_price.get(target, {})
+        elapsed = latest.get("elapsed", 0)
+
+        return {
+            "points": list(self.chart_data.get(target, [])),
+            "asset": target,
+            "resolution_time": resolution,
+            "elapsed": round(elapsed, 1),
+            "total": 300,
+            "current_up": latest.get("up", 0),
+            "current_down": latest.get("down", 0),
+        }
 
     def get_available_assets(self) -> list[dict]:
         """Liste des assets avec des donnees de chart."""
-        return [
-            {"asset": asset, "points": len(data)}
-            for asset, data in sorted(self.chart_data.items())
-            if data
-        ]
+        result = []
+        for asset in sorted(self._active_slot.keys()):
+            latest = self._latest_price.get(asset, {})
+            result.append({
+                "asset": asset,
+                "points": len(self.chart_data.get(asset, [])),
+                "up": latest.get("up", 0),
+                "down": latest.get("down", 0),
+            })
+        return result

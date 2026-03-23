@@ -10,49 +10,77 @@
     {% include "partials/metrics.html" %}
 </div>
 
-<!-- Live Price Chart -->
-<div class="mt-5 glass rounded-2xl p-5">
-    <div class="flex items-center justify-between mb-4">
-        <div class="flex items-center gap-3">
-            <h2 class="text-white font-semibold"><span id="chart-title">Loading</span> — Prix Live</h2>
-            <span class="text-[10px] font-mono text-gray-500 bg-surface-700 px-2 py-0.5 rounded">5min</span>
-        </div>
-        <div class="flex items-center gap-4">
-            <!-- Asset Selector -->
-            <div id="asset-tabs" class="flex gap-1">
-                <!-- Populated by JS -->
+<!-- ===== MAIN CHART — Polymarket style ===== -->
+<div class="mt-5 glass rounded-2xl overflow-hidden">
+    <!-- Chart Header -->
+    <div class="px-5 py-4 border-b border-white/5">
+        <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+                <!-- Asset icon + title -->
+                <div class="w-10 h-10 rounded-full bg-[#f7931a]/20 flex items-center justify-center" id="chart-icon">
+                    <span class="text-[#f7931a] font-bold text-sm" id="chart-icon-text">BTC</span>
+                </div>
+                <div>
+                    <h2 class="text-white font-semibold text-lg" id="chart-title">Bitcoin Up or Down — 5 Minutes</h2>
+                    <p class="text-gray-500 text-xs font-mono" id="chart-slot-info">Loading...</p>
+                </div>
             </div>
-            <!-- Legend -->
-            <div class="flex items-center gap-3 text-xs ml-3">
-                <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-accent-green rounded inline-block"></span> Up</span>
-                <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-accent-red rounded inline-block"></span> Down</span>
-                <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-gray-500 rounded inline-block"></span> Comb.</span>
+            <!-- Countdown -->
+            <div class="flex items-center gap-4">
+                <div class="text-right">
+                    <div class="flex items-center gap-2">
+                        <span class="text-3xl font-bold font-mono text-white" id="countdown-display">00:00</span>
+                    </div>
+                    <p class="text-[10px] text-gray-500 uppercase tracking-wider">restant</p>
+                </div>
+            </div>
+        </div>
+        <!-- Current prices + Asset tabs -->
+        <div class="flex items-center justify-between mt-4">
+            <div class="flex items-center gap-4">
+                <!-- Up price -->
+                <div class="flex items-center gap-2">
+                    <div class="px-3 py-1.5 rounded-lg bg-accent-green/10 border border-accent-green/20">
+                        <span class="text-accent-green font-mono font-bold text-lg" id="price-up">0.500</span>
+                    </div>
+                    <span class="text-accent-green text-xs font-medium">En hausse</span>
+                </div>
+                <!-- Down price -->
+                <div class="flex items-center gap-2">
+                    <div class="px-3 py-1.5 rounded-lg bg-accent-red/10 border border-accent-red/20">
+                        <span class="text-accent-red font-mono font-bold text-lg" id="price-down">0.500</span>
+                    </div>
+                    <span class="text-accent-red text-xs font-medium">En baisse</span>
+                </div>
+            </div>
+            <!-- Asset selector tabs -->
+            <div id="asset-tabs" class="flex gap-1">
             </div>
         </div>
     </div>
-    <div style="height: 280px; position: relative;">
-        <canvas id="priceChart"></canvas>
+    <!-- Chart -->
+    <div class="px-5 py-4">
+        <div style="height: 300px; position: relative;">
+            <canvas id="priceChart"></canvas>
+        </div>
     </div>
 </div>
 
 <!-- Main Grid: Markets + Positions -->
 <div class="grid grid-cols-1 lg:grid-cols-5 gap-5 mt-5">
-
     <!-- Active Markets (2 cols) -->
     <div class="lg:col-span-2 glass rounded-2xl overflow-hidden">
         <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between">
             <h2 class="text-white font-semibold text-sm">Marches Actifs</h2>
-            <span id="pairs-count" class="text-[10px] font-mono text-gray-500 bg-surface-700 px-2 py-0.5 rounded">{{ pairs|length }} slots</span>
+            <span class="text-[10px] font-mono text-gray-500 bg-surface-700 px-2 py-0.5 rounded">5min</span>
         </div>
         <div id="pairs-section"
              hx-get="/api/pairs"
              hx-trigger="load, sse-refresh, every 5s"
              hx-swap="innerHTML"
              class="overflow-y-auto max-h-[360px]">
-            <p class="text-gray-600 text-center py-8 text-sm">Chargement...</p>
         </div>
     </div>
-
     <!-- Positions Leg1/Leg2 Tracker (3 cols) -->
     <div class="lg:col-span-3 glass rounded-2xl overflow-hidden">
         <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between">
@@ -64,14 +92,12 @@
              hx-trigger="load, sse-refresh, every 3s"
              hx-swap="innerHTML"
              class="overflow-y-auto max-h-[360px]">
-            <p class="text-gray-600 text-center py-8 text-sm">Aucune position</p>
         </div>
     </div>
 </div>
 
 <!-- Opportunities + History -->
 <div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
-    <!-- Opportunities -->
     <div class="glass rounded-2xl overflow-hidden">
         <div class="px-5 py-3 border-b border-white/5">
             <h2 class="text-white font-semibold text-sm">Signaux Detectes</h2>
@@ -83,8 +109,6 @@
              class="overflow-y-auto max-h-[280px]">
         </div>
     </div>
-
-    <!-- Recent Trades -->
     <div class="glass rounded-2xl overflow-hidden">
         <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between">
             <h2 class="text-white font-semibold text-sm">Trades Recents</h2>
@@ -113,11 +137,22 @@
 // === State ===
 let priceChart, pnlChart;
 let selectedAsset = 'BTC';
+let lastResolution = '';
 const ASSET_COLORS = {
     BTC: '#f7931a', ETH: '#627eea', SOL: '#9945ff', XRP: '#00aae4',
     DOGE: '#c2a633', BNB: '#f3ba2f', HYPE: '#ff6b6b'
 };
+const ASSET_NAMES = {
+    BTC: 'Bitcoin', ETH: 'Ethereum', SOL: 'Solana', XRP: 'XRP'
+};
 const pnlInitial = {{ pnl_data | tojson }};
+
+// === Format seconds to m:ss ===
+function fmtSec(s) {
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec.toString().padStart(2, '0')}`;
+}
 
 // === Asset Tabs ===
 async function loadAssetTabs() {
@@ -125,82 +160,74 @@ async function loadAssetTabs() {
         const resp = await fetch('/api/available-assets');
         const assets = await resp.json();
         const container = document.getElementById('asset-tabs');
-        if (!assets.length) {
-            container.innerHTML = '<span class="text-gray-600 text-xs">En attente...</span>';
-            return;
-        }
+        if (!assets.length) return;
         container.innerHTML = assets.map(a => {
             const active = a.asset === selectedAsset;
             const color = ASSET_COLORS[a.asset] || '#888';
+            const upPct = a.up ? (a.up * 100).toFixed(0) : '—';
             return `<button onclick="selectAsset('${a.asset}')"
-                class="px-2.5 py-1 rounded-lg text-xs font-mono font-medium transition-all
+                class="px-3 py-1.5 rounded-lg text-xs font-mono transition-all flex items-center gap-2
                 ${active ? 'text-white' : 'text-gray-500 hover:text-gray-300'}"
-                style="${active ? 'background:' + color + '22; color:' + color + '; box-shadow: 0 0 12px ' + color + '33;' : ''}"
-            >${a.asset}</button>`;
+                style="${active ? 'background:' + color + '22; color:' + color + '; box-shadow: 0 0 12px ' + color + '33;' : ''}">
+                <span class="font-bold">${a.asset}</span>
+                <span class="text-[10px] opacity-60">${upPct}%</span>
+            </button>`;
         }).join('');
-        // Auto-select first if current not in list
         if (!assets.find(a => a.asset === selectedAsset) && assets.length) {
-            selectedAsset = assets[0].asset;
-            loadAssetTabs();
+            selectAsset(assets[0].asset);
         }
     } catch(e) {}
 }
 
 function selectAsset(asset) {
     selectedAsset = asset;
-    document.getElementById('chart-title').textContent = asset + ' Up/Down';
+    lastResolution = '';  // Force refresh
+    const name = ASSET_NAMES[asset] || asset;
+    const color = ASSET_COLORS[asset] || '#888';
+    document.getElementById('chart-title').textContent = name + ' Up or Down — 5 Minutes';
+    document.getElementById('chart-icon-text').textContent = asset;
+    document.getElementById('chart-icon').style.background = color + '33';
+    document.getElementById('chart-icon-text').style.color = color;
     loadAssetTabs();
     refreshPriceChart();
 }
 
-// === Live Price Chart ===
-const WINDOW_POINTS = 100; // ~5 min a 3s/point — fenetre glissante
-
+// === Price Chart — fixed 0-300s X axis ===
 function initPriceChart() {
     const ctx = document.getElementById('priceChart').getContext('2d');
     priceChart = new Chart(ctx, {
-        type: 'line',
+        type: 'scatter',
         data: {
-            labels: [],
             datasets: [
                 {
-                    label: 'Up', data: [],
+                    label: 'Up',
+                    data: [],
                     borderColor: '#00d4aa',
-                    backgroundColor: 'rgba(0,212,170,0.08)',
+                    backgroundColor: 'rgba(0,212,170,0.06)',
                     fill: true,
+                    showLine: true,
                     tension: 0.3,
                     pointRadius: 0,
                     borderWidth: 2.5,
-                    spanGaps: true,       // relier les points meme si gap
                 },
                 {
-                    label: 'Down', data: [],
+                    label: 'Down',
+                    data: [],
                     borderColor: '#ff4757',
-                    backgroundColor: 'rgba(255,71,87,0.08)',
+                    backgroundColor: 'rgba(255,71,87,0.06)',
                     fill: true,
+                    showLine: true,
                     tension: 0.3,
                     pointRadius: 0,
                     borderWidth: 2.5,
-                    spanGaps: true,
-                },
-                {
-                    label: 'Combined', data: [],
-                    borderColor: 'rgba(150,150,150,0.35)',
-                    borderDash: [5, 3],
-                    fill: false,
-                    tension: 0.1,
-                    pointRadius: 0,
-                    borderWidth: 1,
-                    spanGaps: true,
                 }
             ]
         },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            interaction: { intersect: false, mode: 'index' },
-            animation: { duration: 150, easing: 'linear' },
-            transitions: { active: { animation: { duration: 0 } } },
+            interaction: { intersect: false, mode: 'nearest' },
+            animation: { duration: 150 },
             plugins: {
                 legend: { display: false },
                 tooltip: {
@@ -209,19 +236,36 @@ function initPriceChart() {
                     borderWidth: 1,
                     titleFont: { family: 'JetBrains Mono', size: 11 },
                     bodyFont: { family: 'JetBrains Mono', size: 11 },
-                    callbacks: { label: (c) => `${c.dataset.label}: ${c.parsed.y.toFixed(3)}` }
+                    callbacks: {
+                        title: (items) => fmtSec(items[0].parsed.x),
+                        label: (c) => `${c.dataset.label}: $${c.parsed.y.toFixed(3)}`
+                    }
                 }
             },
             scales: {
                 x: {
-                    grid: { color: 'rgba(255,255,255,0.03)' },
-                    ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 9 }, maxTicksLimit: 8, maxRotation: 0 },
+                    type: 'linear',
+                    min: 0,
+                    max: 300,
+                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    ticks: {
+                        color: '#555',
+                        font: { family: 'JetBrains Mono', size: 9 },
+                        stepSize: 30,
+                        maxRotation: 0,
+                        callback: (v) => fmtSec(v),
+                    },
+                    title: { display: false },
                 },
                 y: {
-                    min: 0, max: 1.1,
-                    grid: { color: 'rgba(255,255,255,0.03)' },
-                    ticks: { color: '#555', font: { family: 'JetBrains Mono', size: 9 }, stepSize: 0.1,
-                        callback: (v) => v.toFixed(1)
+                    min: 0,
+                    max: 1.0,
+                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    ticks: {
+                        color: '#555',
+                        font: { family: 'JetBrains Mono', size: 9 },
+                        stepSize: 0.1,
+                        callback: (v) => '$' + v.toFixed(1),
                     },
                 }
             }
@@ -232,24 +276,55 @@ function initPriceChart() {
 async function refreshPriceChart() {
     try {
         const resp = await fetch(`/api/chart-data?asset=${selectedAsset}`);
-        const raw = await resp.json();
-        if (!raw.length || !priceChart) return;
+        const chartInfo = await resp.json();
+        if (!priceChart) return;
 
-        // Fenetre glissante : garder les N derniers points
-        const data = raw.slice(-WINDOW_POINTS);
+        const points = chartInfo.points || [];
+        const resTime = chartInfo.resolution_time || '';
+        const elapsed = chartInfo.elapsed || 0;
+        const curUp = chartInfo.current_up || 0;
+        const curDown = chartInfo.current_down || 0;
 
-        priceChart.data.labels = data.map(d => d.t.substring(11, 19));
-        priceChart.data.datasets[0].data = data.map(d => d.up);
-        priceChart.data.datasets[1].data = data.map(d => d.down);
-        priceChart.data.datasets[2].data = data.map(d => d.combined);
+        // Detect slot change → chart resets automatically (backend clears points)
+        if (resTime && resTime !== lastResolution) {
+            lastResolution = resTime;
+            // Update slot info text
+            try {
+                const dt = new Date(resTime);
+                const start = new Date(dt.getTime() - 300000);
+                const fmt = (d) => d.toLocaleTimeString('fr-FR', {hour:'2-digit', minute:'2-digit'});
+                document.getElementById('chart-slot-info').textContent =
+                    `${fmt(start)} — ${fmt(dt)}`;
+            } catch(e) {}
+        }
+
+        // Update prices display
+        document.getElementById('price-up').textContent = curUp.toFixed(3);
+        document.getElementById('price-down').textContent = curDown.toFixed(3);
+
+        // Update countdown
+        const remaining = Math.max(0, 300 - elapsed);
+        const mins = Math.floor(remaining / 60);
+        const secs = Math.floor(remaining % 60);
+        const countdownEl = document.getElementById('countdown-display');
+        countdownEl.textContent = `${mins.toString().padStart(2,'0')}:${secs.toString().padStart(2,'0')}`;
+        countdownEl.className = remaining < 30
+            ? 'text-3xl font-bold font-mono text-accent-red'
+            : 'text-3xl font-bold font-mono text-white';
+
+        // Update chart data (scatter plot: x = seconds, y = price)
+        priceChart.data.datasets[0].data = points.map(p => ({ x: p.s, y: p.up }));
+        priceChart.data.datasets[1].data = points.map(p => ({ x: p.s, y: p.down }));
         priceChart.update('none');
-    } catch(e) {}
+
+    } catch(e) { console.error('Chart refresh error:', e); }
 }
 
 // === P&L Chart ===
+let pnlChartInstance;
 function initPnlChart() {
     const ctx = document.getElementById('pnlChart').getContext('2d');
-    pnlChart = new Chart(ctx, {
+    pnlChartInstance = new Chart(ctx, {
         type: 'line',
         data: {
             labels: pnlInitial.map(d => d.timestamp.substring(11, 19)),
@@ -274,26 +349,45 @@ async function refreshPnlChart() {
     try {
         const resp = await fetch('/api/pnl-data');
         const data = await resp.json();
-        if (pnlChart && data.length) {
-            pnlChart.data.labels = data.map(d => d.timestamp.substring(11, 19));
-            pnlChart.data.datasets[0].data = data.map(d => d.pnl);
-            pnlChart.data.datasets[0].borderColor = data[data.length-1].pnl >= 0 ? '#00d4aa' : '#ff4757';
-            pnlChart.update('none');
+        if (pnlChartInstance && data.length) {
+            pnlChartInstance.data.labels = data.map(d => d.timestamp.substring(11, 19));
+            pnlChartInstance.data.datasets[0].data = data.map(d => d.pnl);
+            pnlChartInstance.data.datasets[0].borderColor = data[data.length-1].pnl >= 0 ? '#00d4aa' : '#ff4757';
+            pnlChartInstance.update('none');
         }
     } catch(e) {}
 }
 
 // === SSE + Init ===
 evtSource.addEventListener('price_update', () => refreshPriceChart());
+evtSource.addEventListener('trade_resolved', () => refreshPnlChart());
 
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('chart-title').textContent = selectedAsset + ' Up/Down';
+    selectAsset('BTC');
     initPriceChart();
     initPnlChart();
     loadAssetTabs();
     refreshPriceChart();
     setInterval(refreshPriceChart, 3000);
     setInterval(loadAssetTabs, 10000);
+    // Countdown ticker (update every second for smooth countdown)
+    setInterval(async () => {
+        const el = document.getElementById('countdown-display');
+        const txt = el.textContent;
+        const parts = txt.split(':');
+        if (parts.length === 2) {
+            let total = parseInt(parts[0]) * 60 + parseInt(parts[1]);
+            if (total > 0) {
+                total--;
+                const m = Math.floor(total / 60);
+                const s = total % 60;
+                el.textContent = `${m.toString().padStart(2,'0')}:${s.toString().padStart(2,'0')}`;
+                el.className = total < 30
+                    ? 'text-3xl font-bold font-mono text-accent-red'
+                    : 'text-3xl font-bold font-mono text-white';
+            }
+        }
+    }, 1000);
 });
 </script>
 {% endblock %}
