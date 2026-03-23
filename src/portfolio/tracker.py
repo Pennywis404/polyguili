@@ -35,7 +35,8 @@ class PortfolioTracker:
         self.pnl_series: deque[dict] = deque(maxlen=MAX_PNL_SERIES)
         self._running = False
 
-        # Per-pair price chart data: pair_id -> deque of {t, up, down, combined}
+        # Per-ASSET price chart data: asset -> deque of {t, up, down, combined}
+        # Keyed by asset (not pair_id) so data persists across market rotations
         self.chart_data: dict[str, deque] = defaultdict(lambda: deque(maxlen=MAX_CHART_POINTS))
 
         # Snapshot initial du P&L
@@ -65,15 +66,20 @@ class PortfolioTracker:
     def _handle_event(self, event: Event) -> None:
         if event.type == "price_update":
             self.price_history.append(event.data)
-            # Feed chart data
+            # Feed chart data keyed by ASSET so it persists across market rotations
             d = event.data
-            pair_id = d["pair_id"]
-            self.chart_data[pair_id].append({
-                "t": datetime.now(timezone.utc).isoformat(),
-                "up": d.get("best_ask_up", 0),
-                "down": d.get("best_ask_down", 0),
-                "combined": d.get("combined_cost", 0),
-            })
+            asset = d.get("asset", "")
+            up = d.get("best_ask_up", 0)
+            down = d.get("best_ask_down", 0)
+            combined = d.get("combined_cost", 0)
+            # Only record meaningful prices (skip 0/0 or 0.999/0.999)
+            if up > 0.01 and down > 0.01 and up < 0.99 and down < 0.99:
+                self.chart_data[asset].append({
+                    "t": datetime.now(timezone.utc).isoformat(),
+                    "up": up,
+                    "down": down,
+                    "combined": combined,
+                })
 
         elif event.type == "opportunity_detected":
             try:
@@ -132,16 +138,20 @@ class PortfolioTracker:
             latest[entry["pair_id"]] = entry
         return latest
 
-    def get_chart_data(self, pair_id: Optional[str] = None) -> list[dict]:
-        """Retourne les donnees du chart pour une paire (ou la premiere trouvee)."""
-        if pair_id and pair_id in self.chart_data:
-            return list(self.chart_data[pair_id])
-        # Retourne les donnees de la premiere paire avec des points
-        for pid, data in self.chart_data.items():
+    def get_chart_data(self, asset: Optional[str] = None) -> list[dict]:
+        """Retourne les donnees du chart pour un asset (ou le premier trouve)."""
+        if asset and asset in self.chart_data:
+            return list(self.chart_data[asset])
+        # Fallback: premier asset avec des points
+        for a, data in self.chart_data.items():
             if data:
                 return list(data)
         return []
 
-    def get_all_chart_series(self) -> dict[str, list[dict]]:
-        """Retourne toutes les series de prix pour toutes les paires."""
-        return {pid: list(data) for pid, data in self.chart_data.items() if data}
+    def get_available_assets(self) -> list[dict]:
+        """Liste des assets avec des donnees de chart."""
+        return [
+            {"asset": asset, "points": len(data)}
+            for asset, data in sorted(self.chart_data.items())
+            if data
+        ]
