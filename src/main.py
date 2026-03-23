@@ -4,6 +4,7 @@ Charge la config, cree tous les composants, et lance les taches en parallele.
 """
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -15,7 +16,6 @@ from src.core.events import EventBus
 from src.market.client import PolymarketClient
 from src.market.monitor import MarketMonitor
 from src.market.pairs import PairManager
-from src.portfolio.persistence import auto_save_loop, load_state, save_state
 from src.portfolio.tracker import PortfolioTracker
 from src.strategy.detector import OpportunityDetector
 from src.strategy.executor import PaperExecutor
@@ -42,14 +42,35 @@ async def main() -> None:
     logger.info("=== Polymarket Temporal Arbitrage Bot ===")
     logger.info("Loading config...")
 
-    # Ensure data directory exists
-    Path(config.persistence.state_file).parent.mkdir(parents=True, exist_ok=True)
+    # Determine persistence backend
+    use_supabase = bool(os.getenv("SUPABASE_URL") and os.getenv("SUPABASE_KEY"))
+    supabase_persistence = None
 
-    # Load persisted state
-    portfolio, trades, opportunities = load_state(
-        config.persistence.state_file,
-        default_capital=config.portfolio.initial_capital,
-    )
+    if use_supabase:
+        from src.portfolio.supabase_persistence import (
+            SupabasePersistence,
+            auto_save_loop,
+            load_state as sb_load_state,
+            save_state as sb_save_state,
+        )
+        supabase_persistence = SupabasePersistence()
+        portfolio, trades, opportunities = sb_load_state(
+            supabase_persistence,
+            default_capital=config.portfolio.initial_capital,
+        )
+        logger.info("Using Supabase persistence")
+    else:
+        from src.portfolio.persistence import (
+            auto_save_loop,
+            load_state,
+            save_state,
+        )
+        Path(config.persistence.state_file).parent.mkdir(parents=True, exist_ok=True)
+        portfolio, trades, opportunities = load_state(
+            config.persistence.state_file,
+            default_capital=config.portfolio.initial_capital,
+        )
+        logger.info("Using JSON file persistence")
 
     # Create event bus
     event_bus = EventBus()
@@ -149,7 +170,7 @@ async def main() -> None:
             asyncio.create_task(tracker.run(), name="tracker"),
             asyncio.create_task(
                 auto_save_loop(
-                    config.persistence.state_file,
+                    supabase_persistence if use_supabase else config.persistence.state_file,
                     portfolio,
                     trades,
                     tracker.opportunities,
@@ -171,7 +192,10 @@ async def main() -> None:
     # Final save
     if config.persistence.backup_on_shutdown:
         logger.info("Saving state before exit...")
-        save_state(config.persistence.state_file, portfolio, trades, tracker.opportunities)
+        if use_supabase:
+            sb_save_state(supabase_persistence, portfolio, trades, tracker.opportunities)
+        else:
+            save_state(config.persistence.state_file, portfolio, trades, tracker.opportunities)
 
     logger.info("Bot stopped.")
 

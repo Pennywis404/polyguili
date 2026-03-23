@@ -38,6 +38,8 @@ class PortfolioTracker:
         # Per-ASSET price chart data: asset -> deque of {t, up, down, combined}
         # Keyed by asset (not pair_id) so data persists across market rotations
         self.chart_data: dict[str, deque] = defaultdict(lambda: deque(maxlen=MAX_CHART_POINTS))
+        # Track nearest-to-resolution pair per asset to avoid mixing slots
+        self._nearest_pair: dict[str, str] = {}
 
         # Snapshot initial du P&L
         self.pnl_series.append({
@@ -66,20 +68,45 @@ class PortfolioTracker:
     def _handle_event(self, event: Event) -> None:
         if event.type == "price_update":
             self.price_history.append(event.data)
-            # Feed chart data keyed by ASSET so it persists across market rotations
             d = event.data
             asset = d.get("asset", "")
             up = d.get("best_ask_up", 0)
             down = d.get("best_ask_down", 0)
             combined = d.get("combined_cost", 0)
-            # Only record meaningful prices (skip 0/0 or 0.999/0.999)
-            if up > 0.01 and down > 0.01 and up < 0.99 and down < 0.99:
+            pair_id = d.get("pair_id", "")
+            resolution = d.get("resolution_time", "")
+
+            # Skip garbage prices
+            if up < 0.01 or down < 0.01 or up > 0.99 or down > 0.99:
+                return
+
+            # Only record from the nearest-to-resolution pair per asset
+            # This avoids mixing the active slot (real prices) with future slots (0.50/0.50)
+            now_iso = datetime.now(timezone.utc).isoformat()
+            current_nearest = self._nearest_pair.get(asset)
+            if current_nearest is None or resolution <= current_nearest or resolution == current_nearest:
+                self._nearest_pair[asset] = resolution
                 self.chart_data[asset].append({
-                    "t": datetime.now(timezone.utc).isoformat(),
+                    "t": now_iso,
                     "up": up,
                     "down": down,
                     "combined": combined,
                 })
+            # When a market resolves and a new one becomes nearest, update
+            elif resolution > current_nearest:
+                # Check if old one has expired
+                try:
+                    old_res = datetime.fromisoformat(current_nearest)
+                    if datetime.now(timezone.utc) > old_res:
+                        self._nearest_pair[asset] = resolution
+                        self.chart_data[asset].append({
+                            "t": now_iso,
+                            "up": up,
+                            "down": down,
+                            "combined": combined,
+                        })
+                except (ValueError, TypeError):
+                    pass
 
         elif event.type == "opportunity_detected":
             try:
