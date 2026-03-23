@@ -1,6 +1,10 @@
 """
 Paper execution engine.
-Ecoute les opportunites detectees, valide les risques, et simule les trades.
+
+Deux modes d'execution :
+1. LEG 1 : acheter un cote quand il passe sous 0.50
+2. LEG 2 : completer l'arb quand l'autre cote passe aussi sous 0.50
+
 Gere aussi la resolution des marches (payout).
 """
 import asyncio
@@ -10,7 +14,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from src.core.events import Event, EventBus
-from src.core.fees import arbitrage_profit, shares_after_fee
+from src.core.fees import calculate_fee, shares_after_fee
 from src.core.models import (
     MarketPair,
     Opportunity,
@@ -47,7 +51,6 @@ class PaperExecutor:
         self._running = False
 
     async def run(self) -> None:
-        """Boucle principale : ecoute les opportunites et gere les resolutions."""
         self._running = True
         queue = await self._event_bus.subscribe()
         logger.info("PaperExecutor started (capital: $%.2f)", self.portfolio.current_capital)
@@ -56,7 +59,9 @@ class PaperExecutor:
             try:
                 event = await asyncio.wait_for(queue.get(), timeout=2.0)
                 if event.type == "opportunity_detected":
-                    await self._handle_opportunity(event)
+                    await self._handle_leg1(event)
+                elif event.type == "leg2_opportunity":
+                    await self._handle_leg2(event)
                 elif event.type == "price_update":
                     await self._check_resolutions()
             except asyncio.TimeoutError:
@@ -67,20 +72,21 @@ class PaperExecutor:
     def stop(self) -> None:
         self._running = False
 
-    async def _handle_opportunity(self, event: Event) -> None:
-        """Traite une opportunite detectee."""
+    async def _handle_leg1(self, event: Event) -> None:
+        """Acheter la leg 1 (un seul cote)."""
         opp = Opportunity.from_dict(event.data)
 
-        # Trouver la paire
         pair = self._find_pair(opp.pair_id)
         if not pair:
-            logger.warning("Pair not found for opportunity %s", opp.pair_id)
             return
 
-        # Validation des risques
+        # Validation risques
+        # On deploie la moitie du capital par trade pour la leg 1
+        leg1_capital = self._capital_per_trade / 2
+
         ok, reason = validate_trade(
             pair=pair,
-            capital_needed=self._capital_per_trade,
+            capital_needed=leg1_capital,
             portfolio=self.portfolio,
             trades=self.trades,
             max_positions=self._max_positions,
@@ -88,74 +94,50 @@ class PaperExecutor:
             min_liquidity=self._min_liquidity,
         )
         if not ok:
-            logger.info("Trade refused for %s %s: %s", pair.asset, pair.timeframe, reason)
+            logger.info("Leg1 refused %s %s: %s", pair.asset, pair.timeframe, reason)
             return
 
-        # Executer le paper trade (arb simultane : les deux legs en meme temps)
-        await self._execute_simultaneous_arb(pair, opp)
-
-    async def _execute_simultaneous_arb(self, pair: MarketPair, opp: Opportunity) -> None:
-        """Execute un arb simultane : achete les deux legs immediatement."""
-        capital = self._capital_per_trade
-        p1 = opp.leg1_price
-        p2 = opp.leg2_price
-
-        result = arbitrage_profit(p1, p2, capital)
-        if not result["is_profitable"]:
-            logger.info("Arb no longer profitable after recalculation")
-            return
-
-        # Calculer les shares reelles apres fees
-        stake1 = result["stake_leg1"]
-        stake2 = result["stake_leg2"]
-        shares1 = shares_after_fee(stake1, p1)
-        shares2 = shares_after_fee(stake2, p2)
+        # Executer leg 1
+        price = opp.leg1_price
+        shares = shares_after_fee(leg1_capital, price)
+        fee = calculate_fee(leg1_capital / price, price)
 
         now = datetime.now(timezone.utc)
         trade_id = str(uuid.uuid4())[:8]
-        leg1_side = opp.leg1_side
-        leg2_side = Side.DOWN if leg1_side == Side.UP else Side.UP
 
         trade = PaperTrade(
             id=trade_id,
             pair_id=pair.pair_id,
             asset=pair.asset,
             timeframe=pair.timeframe,
-            leg1_side=leg1_side,
-            leg1_price=p1,
-            leg1_shares=shares1,
-            leg1_fee=result["fee_leg1"],
+            leg1_side=opp.leg1_side,
+            leg1_price=price,
+            leg1_shares=shares,
+            leg1_fee=fee,
             leg1_timestamp=now,
-            leg1_stake=stake1,
-            leg2_side=leg2_side,
-            leg2_price=p2,
-            leg2_shares=shares2,
-            leg2_fee=result["fee_leg2"],
-            leg2_timestamp=now,
-            leg2_stake=stake2,
-            status=TradeStatus.FULLY_HEDGED,
-            capital_deployed=capital,
-            total_fees=result["total_fees"],
+            leg1_stake=leg1_capital,
+            status=TradeStatus.LEG1_OPEN,
+            capital_deployed=leg1_capital,
+            total_fees=fee,
             resolution_time=pair.resolution_time,
         )
 
-        # Mettre a jour le portfolio
         self.trades[trade_id] = trade
-        self.portfolio.current_capital -= capital
-        self.portfolio.total_deployed += capital
-        self.portfolio.total_fees_paid += result["total_fees"]
+        self.portfolio.current_capital -= leg1_capital
+        self.portfolio.total_deployed += leg1_capital
+        self.portfolio.total_fees_paid += fee
         self.portfolio.total_trades += 1
         self.portfolio.active_positions.append(trade_id)
 
         logger.info(
-            "TRADE EXECUTED: %s | %s %s | p1=%.3f p2=%.3f | Capital=$%.2f | Est. ROI=%.2f%%",
+            "LEG1 EXECUTED: %s | %s %s | %s=%.3f | Capital=$%.2f | Shares=%.2f",
             trade_id,
             pair.asset,
             pair.timeframe,
-            p1,
-            p2,
-            capital,
-            result["worst_case_roi"],
+            opp.leg1_side.value,
+            price,
+            leg1_capital,
+            shares,
         )
 
         await self._event_bus.publish(Event(
@@ -163,24 +145,86 @@ class PaperExecutor:
             data=trade.to_dict(),
         ))
 
+    async def _handle_leg2(self, event: Event) -> None:
+        """Completer la leg 2 pour verrouiller l'arb."""
+        data = event.data
+        trade_id = data["trade_id"]
+        leg2_price = data["leg2_price"]
+        leg2_side = Side(data["leg2_side"])
+
+        trade = self.trades.get(trade_id)
+        if not trade or trade.status != TradeStatus.LEG1_OPEN:
+            return
+
+        # Capital pour leg 2 = meme montant que leg 1
+        leg2_capital = trade.leg1_stake
+        if self.portfolio.current_capital < leg2_capital:
+            logger.warning("Pas assez de capital pour leg 2 (%s)", trade_id)
+            return
+
+        shares = shares_after_fee(leg2_capital, leg2_price)
+        fee = calculate_fee(leg2_capital / leg2_price, leg2_price)
+        now = datetime.now(timezone.utc)
+
+        # Completer le trade
+        trade.leg2_side = leg2_side
+        trade.leg2_price = leg2_price
+        trade.leg2_shares = shares
+        trade.leg2_fee = fee
+        trade.leg2_timestamp = now
+        trade.leg2_stake = leg2_capital
+        trade.status = TradeStatus.FULLY_HEDGED
+        trade.capital_deployed += leg2_capital
+        trade.total_fees += fee
+
+        self.portfolio.current_capital -= leg2_capital
+        self.portfolio.total_deployed += leg2_capital
+        self.portfolio.total_fees_paid += fee
+
+        combined = trade.leg1_price + leg2_price
+
+        logger.info(
+            "LEG2 COMPLETED: %s | %s %s | %s=%.3f | Combined=%.4f | Capital total=$%.2f",
+            trade_id,
+            trade.asset,
+            trade.timeframe,
+            leg2_side.value,
+            leg2_price,
+            combined,
+            trade.capital_deployed,
+        )
+
+        await self._event_bus.publish(Event(
+            type="trade_completed",
+            data=trade.to_dict(),
+        ))
+
     async def _check_resolutions(self) -> None:
-        """Verifie si des trades hedges ont atteint leur resolution_time."""
+        """Verifie les trades qui ont atteint leur resolution_time."""
         now = datetime.now(timezone.utc)
         resolved_ids: list[str] = []
 
         for trade_id in list(self.portfolio.active_positions):
             trade = self.trades.get(trade_id)
-            if not trade or trade.status != TradeStatus.FULLY_HEDGED:
+            if not trade:
                 continue
-            if not trade.resolution_time:
-                continue
-            if now < trade.resolution_time:
+            if not trade.resolution_time or now < trade.resolution_time:
                 continue
 
-            # Resoudre le trade
-            # Pour un arb fully hedged, le payout est le min des deux legs de shares
-            min_shares = min(trade.leg1_shares, trade.leg2_shares or 0)
-            payout = min_shares * 1.0  # 1 USDC par share gagnante
+            if trade.status == TradeStatus.FULLY_HEDGED:
+                # Arb complet → payout garanti
+                min_shares = min(trade.leg1_shares, trade.leg2_shares or 0)
+                payout = min_shares * 1.0
+            elif trade.status == TradeStatus.LEG1_OPEN:
+                # Leg 1 seule → on a parie sur un seul cote
+                # 50/50 chance : soit on gagne (payout = shares), soit on perd (payout = 0)
+                # Pour le paper trading, on simule le resultat
+                # On utilise le prix comme proxy de probabilite
+                import random
+                won = random.random() < trade.leg1_price  # prix = proba implicite
+                payout = trade.leg1_shares * 1.0 if won else 0.0
+            else:
+                continue
 
             profit = payout - trade.capital_deployed
             roi = (profit / trade.capital_deployed * 100) if trade.capital_deployed > 0 else 0
@@ -189,13 +233,14 @@ class PaperExecutor:
             trade.profit = round(profit, 4)
             trade.roi = round(roi, 4)
             trade.resolved_at = now
-            trade.resolution_outcome = "hedged"
 
             if profit >= 0:
                 trade.status = TradeStatus.RESOLVED_WIN
+                trade.resolution_outcome = "win"
                 self.portfolio.winning_trades += 1
             else:
                 trade.status = TradeStatus.RESOLVED_LOSS
+                trade.resolution_outcome = "loss"
                 self.portfolio.losing_trades += 1
 
             self.portfolio.current_capital += payout
@@ -204,13 +249,14 @@ class PaperExecutor:
             resolved_ids.append(trade_id)
 
             logger.info(
-                "TRADE RESOLVED: %s | %s %s | Profit=$%.4f (%.2f%%) | Status=%s",
+                "RESOLVED: %s | %s %s | %s | Payout=$%.4f Profit=$%.4f (%.2f%%)",
                 trade_id,
                 trade.asset,
                 trade.timeframe,
+                trade.status.value,
+                payout,
                 profit,
                 roi,
-                trade.status.value,
             )
 
             await self._event_bus.publish(Event(

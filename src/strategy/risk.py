@@ -48,6 +48,9 @@ def check_time_to_resolution(pair: MarketPair, min_seconds: int) -> bool:
 
 
 def check_liquidity(pair: MarketPair, min_usdc: float) -> bool:
+    # En paper trading, on skip le check de liquidite si min = 0
+    if min_usdc <= 0:
+        return True
     return pair.ask_size_up >= min_usdc and pair.ask_size_down >= min_usdc
 
 

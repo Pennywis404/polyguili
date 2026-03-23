@@ -76,9 +76,8 @@ async def main() -> None:
     detector = OpportunityDetector(
         event_bus=event_bus,
         pairs_ref=monitor.active_pairs,
-        simultaneous_threshold=config.strategy.simultaneous_arb_threshold,
-        combined_cost_target=config.strategy.combined_cost_target,
-        leg1_max_price=config.strategy.leg1_max_price,
+        trades=trades,
+        portfolio_active_positions=portfolio.active_positions,
         capital_per_trade=config.strategy.capital_per_trade,
         min_time_to_resolution=config.strategy.min_time_to_resolution,
         min_liquidity=config.strategy.min_liquidity,
