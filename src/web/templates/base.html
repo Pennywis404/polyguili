@@ -1,87 +1,114 @@
 <!DOCTYPE html>
-<html lang="fr" class="dark">
+<html lang="fr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Polymarket Arb Bot</title>
+    <title>PolyArb — Bitcoin Temporal Arbitrage</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/htmx.org@1.9.10"></script>
-    <script src="https://unpkg.com/htmx.org@1.9.10/dist/ext/sse.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-    <style>
-        body { background: #0f1117; font-family: 'Inter', system-ui, sans-serif; }
-        .pulse-dot { animation: pulse 2s infinite; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.4; }
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        surface: { 900: '#0a0b0f', 800: '#12131a', 700: '#1a1b25', 600: '#22232f' },
+                        accent: { green: '#00d4aa', red: '#ff4757', blue: '#5b7fff', purple: '#a855f7', yellow: '#fbbf24' },
+                    }
+                }
+            }
         }
+    </script>
+    <style>
+        body { background: #0a0b0f; }
+        .glass { background: rgba(18, 19, 26, 0.8); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.06); }
+        .glass-light { background: rgba(26, 27, 37, 0.6); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.04); }
+        .glow-green { box-shadow: 0 0 20px rgba(0, 212, 170, 0.15); }
+        .glow-red { box-shadow: 0 0 20px rgba(255, 71, 87, 0.15); }
+        .pulse-dot { animation: pulse 2s ease-in-out infinite; }
+        @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:translateY(0)} }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #22232f; border-radius: 2px; }
     </style>
 </head>
-<body class="text-gray-200 min-h-screen">
-    <!-- Nav -->
-    <nav class="border-b border-gray-800 bg-gray-900/80 backdrop-blur sticky top-0 z-50">
-        <div class="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-            <div class="flex items-center gap-6">
-                <h1 class="text-lg font-bold text-white tracking-tight">
-                    <span class="text-purple-400">Poly</span>Arb Bot
-                </h1>
-                <div class="flex gap-4 text-sm">
-                    <a href="/" class="hover:text-white transition {% block nav_dashboard %}{% endblock %}">Dashboard</a>
-                    <a href="/trades" class="hover:text-white transition {% block nav_trades %}{% endblock %}">Trades</a>
-                    <a href="/settings" class="hover:text-white transition {% block nav_settings %}{% endblock %}">Settings</a>
+<body class="text-gray-300 min-h-screen font-sans antialiased">
+    <!-- Header -->
+    <header class="glass sticky top-0 z-50">
+        <div class="max-w-[1400px] mx-auto px-6 py-3 flex items-center justify-between">
+            <div class="flex items-center gap-5">
+                <div class="flex items-center gap-2.5">
+                    <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-accent-purple to-accent-blue flex items-center justify-center">
+                        <span class="text-white font-bold text-sm">PA</span>
+                    </div>
+                    <span class="font-semibold text-white tracking-tight text-lg">PolyArb</span>
                 </div>
+                <nav class="flex gap-1 text-sm">
+                    <a href="/" class="px-3 py-1.5 rounded-lg transition {% block nav_dashboard %}{% endblock %}">Dashboard</a>
+                    <a href="/trades" class="px-3 py-1.5 rounded-lg transition {% block nav_trades %}{% endblock %}">Trades</a>
+                </nav>
             </div>
-            <div class="flex items-center gap-2 text-xs text-gray-500">
-                <span id="sse-status" class="pulse-dot w-2 h-2 rounded-full bg-green-500 inline-block"></span>
-                <span>PAPER TRADING</span>
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg glass-light">
+                    <span class="font-mono text-xs text-accent-yellow">BTC</span>
+                    <span class="text-gray-500 text-xs">5min</span>
+                </div>
+                <div class="flex items-center gap-2 px-3 py-1.5 rounded-lg glass-light">
+                    <span id="sse-dot" class="pulse-dot w-2 h-2 rounded-full bg-accent-green inline-block"></span>
+                    <span class="text-xs text-gray-400">LIVE</span>
+                </div>
+                <span class="text-[10px] font-mono text-gray-600 uppercase tracking-wider px-2 py-1 rounded bg-surface-700">Paper</span>
             </div>
         </div>
-    </nav>
+    </header>
 
-    <!-- Content -->
-    <main class="max-w-7xl mx-auto px-4 py-6">
+    <main class="max-w-[1400px] mx-auto px-6 py-5">
         {% block content %}{% endblock %}
     </main>
 
-    <!-- SSE Connection -->
+    <!-- SSE -->
     <script>
         const evtSource = new EventSource('/api/stream');
-
         evtSource.onopen = () => {
-            document.getElementById('sse-status').classList.remove('bg-red-500');
-            document.getElementById('sse-status').classList.add('bg-green-500');
+            document.getElementById('sse-dot').classList.remove('bg-red-500');
+            document.getElementById('sse-dot').classList.add('bg-accent-green');
         };
-
         evtSource.onerror = () => {
-            document.getElementById('sse-status').classList.remove('bg-green-500');
-            document.getElementById('sse-status').classList.add('bg-red-500');
+            document.getElementById('sse-dot').classList.remove('bg-accent-green');
+            document.getElementById('sse-dot').classList.add('bg-red-500');
         };
-
-        // Auto-refresh des sections via HTMX polling
         evtSource.addEventListener('price_update', () => {
             htmx.trigger('#pairs-section', 'sse-refresh');
         });
-
         evtSource.addEventListener('opportunity_detected', () => {
             htmx.trigger('#opps-section', 'sse-refresh');
+            htmx.trigger('#metrics-section', 'sse-refresh');
         });
-
         evtSource.addEventListener('trade_opened', () => {
             htmx.trigger('#positions-section', 'sse-refresh');
             htmx.trigger('#metrics-section', 'sse-refresh');
         });
-
+        evtSource.addEventListener('trade_completed', () => {
+            htmx.trigger('#positions-section', 'sse-refresh');
+            htmx.trigger('#metrics-section', 'sse-refresh');
+        });
         evtSource.addEventListener('trade_resolved', () => {
             htmx.trigger('#positions-section', 'sse-refresh');
             htmx.trigger('#metrics-section', 'sse-refresh');
+            htmx.trigger('#history-section', 'sse-refresh');
             if (typeof refreshPnlChart === 'function') refreshPnlChart();
         });
-
         evtSource.addEventListener('portfolio_update', () => {
             htmx.trigger('#metrics-section', 'sse-refresh');
         });
     </script>
-
     {% block scripts %}{% endblock %}
 </body>
 </html>

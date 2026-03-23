@@ -31,8 +31,13 @@ ASSET_MAP: dict[str, str] = {
 
 
 class PairManager:
-    def __init__(self, target_assets: tuple[str, ...] = ("BTC", "ETH", "SOL", "XRP")) -> None:
+    def __init__(
+        self,
+        target_assets: tuple[str, ...] = ("BTC",),
+        target_timeframes: tuple[str, ...] = ("5min",),
+    ) -> None:
         self._target_assets = set(target_assets)
+        self._target_timeframes = set(target_timeframes)
 
     def build_pairs_from_markets(self, markets: list[dict]) -> list[MarketPair]:
         """
@@ -53,6 +58,8 @@ class PairManager:
                 continue
 
             timeframe = "5min" if timeframe_key == "5m" else "15min"
+            if timeframe not in self._target_timeframes:
+                continue
 
             pair = self._build_pair(market, asset, timeframe)
             if pair:

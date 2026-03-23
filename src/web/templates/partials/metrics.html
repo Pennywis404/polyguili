@@ -1,0 +1,29 @@
+<div class="grid grid-cols-2 lg:grid-cols-5 gap-3">
+    <div class="glass rounded-xl p-4">
+        <p class="text-gray-500 text-[11px] uppercase tracking-wider mb-1">Capital</p>
+        <p class="text-xl font-semibold text-white font-mono">${{ "%.2f"|format(portfolio.current_capital) }}</p>
+        <p class="text-[10px] text-gray-600 mt-1">Deploye: ${{ "%.2f"|format(portfolio.total_deployed) }}</p>
+    </div>
+    <div class="glass rounded-xl p-4 {% if portfolio.total_pnl >= 0 %}glow-green{% else %}glow-red{% endif %}">
+        <p class="text-gray-500 text-[11px] uppercase tracking-wider mb-1">P&L</p>
+        <p class="text-xl font-semibold font-mono {% if portfolio.total_pnl >= 0 %}text-accent-green{% else %}text-accent-red{% endif %}">
+            {% if portfolio.total_pnl >= 0 %}+{% endif %}${{ "%.4f"|format(portfolio.total_pnl) }}
+        </p>
+        <p class="text-[10px] text-gray-600 mt-1">Fees: ${{ "%.4f"|format(portfolio.total_fees_paid) }}</p>
+    </div>
+    <div class="glass rounded-xl p-4">
+        <p class="text-gray-500 text-[11px] uppercase tracking-wider mb-1">Trades</p>
+        <p class="text-xl font-semibold text-white font-mono">{{ portfolio.active_positions|length }}<span class="text-gray-500 text-sm"> / {{ portfolio.total_trades }}</span></p>
+        <p class="text-[10px] text-gray-600 mt-1">Actifs / Total</p>
+    </div>
+    <div class="glass rounded-xl p-4">
+        <p class="text-gray-500 text-[11px] uppercase tracking-wider mb-1">Win Rate</p>
+        <p class="text-xl font-semibold text-white font-mono">{{ "%.1f"|format(portfolio.win_rate) }}%</p>
+        <p class="text-[10px] text-gray-600 mt-1">W:{{ portfolio.winning_trades }} L:{{ portfolio.losing_trades }}</p>
+    </div>
+    <div class="glass rounded-xl p-4">
+        <p class="text-gray-500 text-[11px] uppercase tracking-wider mb-1">Strategie</p>
+        <p class="text-sm font-medium text-accent-purple mt-0.5">Temporal Arb</p>
+        <p class="text-[10px] text-gray-600 mt-1">Entry &lt; $0.50</p>
+    </div>
+</div>

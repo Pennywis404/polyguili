@@ -61,7 +61,10 @@ async def main() -> None:
     )
 
     # Create pair manager
-    pair_manager = PairManager(target_assets=config.monitoring.assets)
+    pair_manager = PairManager(
+        target_assets=config.monitoring.assets,
+        target_timeframes=config.monitoring.timeframes,
+    )
 
     # Create monitor
     monitor = MarketMonitor(

@@ -11,8 +11,8 @@ strategy:
 monitoring:
   poll_interval: 3
   pair_refresh_interval: 60
-  assets: ["BTC", "ETH", "SOL", "XRP"]
-  timeframes: ["5min", "15min"]
+  assets: ["BTC"]
+  timeframes: ["5min"]
 
 portfolio:
   initial_capital: 10000

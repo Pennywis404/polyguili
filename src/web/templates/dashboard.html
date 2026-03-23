@@ -1,85 +1,101 @@
 {% extends "base.html" %}
-
-{% block nav_dashboard %}text-white font-medium{% endblock %}
+{% block nav_dashboard %}bg-surface-700 text-white{% endblock %}
 
 {% block content %}
-<!-- Metrics -->
+<!-- Metrics Row -->
 <div id="metrics-section"
      hx-get="/api/metrics"
      hx-trigger="load, sse-refresh"
      hx-swap="innerHTML">
-    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <p class="text-gray-400 text-sm">Capital disponible</p>
-            <p class="text-2xl font-bold text-white">${{ "%.2f"|format(portfolio.current_capital) }}</p>
+    {% include "partials/metrics.html" %}
+</div>
+
+<!-- Live Price Chart -->
+<div class="mt-5 glass rounded-2xl p-5">
+    <div class="flex items-center justify-between mb-4">
+        <div class="flex items-center gap-3">
+            <h2 class="text-white font-semibold">BTC Up/Down — Prix Live</h2>
+            <span class="text-[10px] font-mono text-gray-500 bg-surface-700 px-2 py-0.5 rounded">5min markets</span>
         </div>
-        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <p class="text-gray-400 text-sm">P&L Total</p>
-            <p class="text-2xl font-bold {% if portfolio.total_pnl >= 0 %}text-green-400{% else %}text-red-400{% endif %}">
-                ${{ "%.4f"|format(portfolio.total_pnl) }}
-            </p>
+        <div class="flex items-center gap-4 text-xs">
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-accent-green rounded inline-block"></span> Up</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-accent-red rounded inline-block"></span> Down</span>
+            <span class="flex items-center gap-1.5"><span class="w-3 h-0.5 bg-gray-500 rounded inline-block border border-dashed border-gray-400"></span> Combined</span>
         </div>
-        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <p class="text-gray-400 text-sm">Trades</p>
-            <p class="text-2xl font-bold text-white">{{ portfolio.active_positions|length }} / {{ portfolio.total_trades }}</p>
-        </div>
-        <div class="bg-gray-800 rounded-xl p-4 border border-gray-700">
-            <p class="text-gray-400 text-sm">Win Rate</p>
-            <p class="text-2xl font-bold text-white">{{ "%.1f"|format(portfolio.win_rate) }}%</p>
-        </div>
+    </div>
+    <div style="height: 280px; position: relative;">
+        <canvas id="priceChart"></canvas>
     </div>
 </div>
 
-<!-- Main Grid -->
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-6">
-    <!-- Pairs (left) -->
-    <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-800 flex items-center justify-between">
-            <h2 class="font-semibold text-white">Marches Actifs</h2>
-            <span class="text-xs text-gray-500">{{ pairs|length }} paires</span>
+<!-- Main Grid: Markets + Positions -->
+<div class="grid grid-cols-1 lg:grid-cols-5 gap-5 mt-5">
+
+    <!-- Active Markets (2 cols) -->
+    <div class="lg:col-span-2 glass rounded-2xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+            <h2 class="text-white font-semibold text-sm">Marches Actifs</h2>
+            <span id="pairs-count" class="text-[10px] font-mono text-gray-500 bg-surface-700 px-2 py-0.5 rounded">{{ pairs|length }} slots</span>
         </div>
         <div id="pairs-section"
              hx-get="/api/pairs"
              hx-trigger="load, sse-refresh, every 5s"
              hx-swap="innerHTML"
-             class="overflow-x-auto">
-            <p class="text-gray-500 text-center py-4">Chargement...</p>
+             class="overflow-y-auto max-h-[360px]">
+            <p class="text-gray-600 text-center py-8 text-sm">Chargement...</p>
         </div>
     </div>
 
-    <!-- Opportunities (center) -->
-    <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-800">
-            <h2 class="font-semibold text-white">Opportunites</h2>
-        </div>
-        <div id="opps-section"
-             hx-get="/api/opportunities"
-             hx-trigger="load, sse-refresh, every 10s"
-             hx-swap="innerHTML"
-             class="overflow-x-auto max-h-80 overflow-y-auto">
-            <p class="text-gray-500 text-center py-4">En attente...</p>
-        </div>
-    </div>
-
-    <!-- Positions (right) -->
-    <div class="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
-        <div class="px-4 py-3 border-b border-gray-800">
-            <h2 class="font-semibold text-white">Positions Ouvertes</h2>
+    <!-- Positions Leg1/Leg2 Tracker (3 cols) -->
+    <div class="lg:col-span-3 glass rounded-2xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+            <h2 class="text-white font-semibold text-sm">Positions — Leg 1 / Leg 2</h2>
+            <span class="text-[10px] font-mono text-accent-green bg-accent-green/10 px-2 py-0.5 rounded">LIVE</span>
         </div>
         <div id="positions-section"
              hx-get="/api/positions"
              hx-trigger="load, sse-refresh, every 3s"
              hx-swap="innerHTML"
-             class="overflow-x-auto">
-            <p class="text-gray-500 text-center py-4">Aucune position</p>
+             class="overflow-y-auto max-h-[360px]">
+            <p class="text-gray-600 text-center py-8 text-sm">Aucune position</p>
+        </div>
+    </div>
+</div>
+
+<!-- Opportunities + History -->
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5">
+    <!-- Opportunities -->
+    <div class="glass rounded-2xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-white/5">
+            <h2 class="text-white font-semibold text-sm">Signaux Detectes</h2>
+        </div>
+        <div id="opps-section"
+             hx-get="/api/opportunities"
+             hx-trigger="load, sse-refresh, every 10s"
+             hx-swap="innerHTML"
+             class="overflow-y-auto max-h-[280px]">
+        </div>
+    </div>
+
+    <!-- Recent Trades -->
+    <div class="glass rounded-2xl overflow-hidden">
+        <div class="px-5 py-3 border-b border-white/5 flex items-center justify-between">
+            <h2 class="text-white font-semibold text-sm">Trades Recents</h2>
+            <a href="/trades" class="text-[10px] text-accent-blue hover:underline">Voir tout</a>
+        </div>
+        <div id="history-section"
+             hx-get="/api/history"
+             hx-trigger="load, sse-refresh"
+             hx-swap="innerHTML"
+             class="overflow-y-auto max-h-[280px]">
         </div>
     </div>
 </div>
 
 <!-- P&L Chart -->
-<div class="mt-6 bg-gray-900 rounded-xl border border-gray-800 p-4">
-    <h2 class="font-semibold text-white mb-4">P&L Cumule</h2>
-    <div style="height: 250px;">
+<div class="mt-5 glass rounded-2xl p-5">
+    <h2 class="text-white font-semibold mb-4">P&L Cumule</h2>
+    <div style="height: 180px;">
         <canvas id="pnlChart"></canvas>
     </div>
 </div>
@@ -87,62 +103,152 @@
 
 {% block scripts %}
 <script>
-    let pnlChart;
-    const initialData = {{ pnl_data | tojson }};
+// === Live Price Chart ===
+let priceChart;
+const chartData = {{ pnl_data | tojson }};
 
-    function initPnlChart() {
-        const ctx = document.getElementById('pnlChart').getContext('2d');
-        const labels = initialData.map(d => d.timestamp.substring(11, 19));
-        const values = initialData.map(d => d.pnl);
-
-        pnlChart = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: labels,
-                datasets: [{
-                    label: 'P&L ($)',
-                    data: values,
-                    borderColor: values[values.length-1] >= 0 ? '#4ade80' : '#f87171',
-                    backgroundColor: 'transparent',
-                    tension: 0.3,
-                    pointRadius: 2,
+function initPriceChart() {
+    const ctx = document.getElementById('priceChart').getContext('2d');
+    priceChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [
+                {
+                    label: 'Up',
+                    data: [],
+                    borderColor: '#00d4aa',
+                    backgroundColor: 'rgba(0, 212, 170, 0.05)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
                     borderWidth: 2,
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: { legend: { display: false } },
-                scales: {
-                    x: {
-                        grid: { color: '#1f2937' },
-                        ticks: { color: '#6b7280', maxTicksLimit: 10 }
-                    },
-                    y: {
-                        grid: { color: '#1f2937' },
-                        ticks: { color: '#6b7280' }
+                },
+                {
+                    label: 'Down',
+                    data: [],
+                    borderColor: '#ff4757',
+                    backgroundColor: 'rgba(255, 71, 87, 0.05)',
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    borderWidth: 2,
+                },
+                {
+                    label: 'Combined',
+                    data: [],
+                    borderColor: 'rgba(150,150,150,0.4)',
+                    borderDash: [4, 4],
+                    fill: false,
+                    tension: 0.1,
+                    pointRadius: 0,
+                    borderWidth: 1,
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            animation: { duration: 300 },
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    backgroundColor: '#12131a',
+                    borderColor: 'rgba(255,255,255,0.1)',
+                    borderWidth: 1,
+                    titleFont: { family: 'JetBrains Mono', size: 11 },
+                    bodyFont: { family: 'JetBrains Mono', size: 11 },
+                    callbacks: {
+                        label: (ctx) => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(3)}`
                     }
                 }
+            },
+            scales: {
+                x: {
+                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    ticks: { color: '#444', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 },
+                },
+                y: {
+                    min: 0, max: 1.1,
+                    grid: { color: 'rgba(255,255,255,0.03)' },
+                    ticks: { color: '#444', font: { family: 'JetBrains Mono', size: 10 }, stepSize: 0.1 },
+                }
             }
-        });
-    }
-
-    async function refreshPnlChart() {
-        try {
-            const resp = await fetch('/api/pnl-data');
-            const data = await resp.json();
-            if (pnlChart && data.length > 0) {
-                pnlChart.data.labels = data.map(d => d.timestamp.substring(11, 19));
-                pnlChart.data.datasets[0].data = data.map(d => d.pnl);
-                const lastVal = data[data.length-1].pnl;
-                pnlChart.data.datasets[0].borderColor = lastVal >= 0 ? '#4ade80' : '#f87171';
-                pnlChart.update('none');
-            }
-        } catch (e) {
-            console.error('Failed to refresh PnL chart:', e);
         }
-    }
+    });
+}
 
-    document.addEventListener('DOMContentLoaded', initPnlChart);
+async function refreshPriceChart() {
+    try {
+        const resp = await fetch('/api/chart-data');
+        const data = await resp.json();
+        if (!data.length || !priceChart) return;
+
+        const labels = data.map(d => d.t.substring(11, 19));
+        priceChart.data.labels = labels;
+        priceChart.data.datasets[0].data = data.map(d => d.up);
+        priceChart.data.datasets[1].data = data.map(d => d.down);
+        priceChart.data.datasets[2].data = data.map(d => d.combined);
+        priceChart.update('none');
+    } catch(e) {}
+}
+
+// === P&L Chart ===
+let pnlChart;
+function initPnlChart() {
+    const ctx = document.getElementById('pnlChart').getContext('2d');
+    const initial = chartData;
+    pnlChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: initial.map(d => d.timestamp.substring(11, 19)),
+            datasets: [{
+                label: 'P&L',
+                data: initial.map(d => d.pnl),
+                borderColor: initial.length && initial[initial.length-1].pnl >= 0 ? '#00d4aa' : '#ff4757',
+                backgroundColor: 'transparent',
+                tension: 0.3,
+                pointRadius: 2,
+                pointBackgroundColor: initial.length && initial[initial.length-1].pnl >= 0 ? '#00d4aa' : '#ff4757',
+                borderWidth: 2,
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#444', font: { family: 'JetBrains Mono', size: 10 }, maxTicksLimit: 8 } },
+                y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#444', font: { family: 'JetBrains Mono', size: 10 } } }
+            }
+        }
+    });
+}
+
+async function refreshPnlChart() {
+    try {
+        const resp = await fetch('/api/pnl-data');
+        const data = await resp.json();
+        if (pnlChart && data.length) {
+            pnlChart.data.labels = data.map(d => d.timestamp.substring(11, 19));
+            pnlChart.data.datasets[0].data = data.map(d => d.pnl);
+            const last = data[data.length-1].pnl;
+            pnlChart.data.datasets[0].borderColor = last >= 0 ? '#00d4aa' : '#ff4757';
+            pnlChart.update('none');
+        }
+    } catch(e) {}
+}
+
+// SSE: update price chart on every price update
+evtSource.addEventListener('price_update', () => refreshPriceChart());
+
+document.addEventListener('DOMContentLoaded', () => {
+    initPriceChart();
+    initPnlChart();
+    refreshPriceChart();
+    // Auto-refresh price chart every 3s as fallback
+    setInterval(refreshPriceChart, 3000);
+});
 </script>
 {% endblock %}
