@@ -212,8 +212,8 @@ async def api_positions(request: Request):
         <div class="px-4 py-3 hover:bg-white/[0.02] transition-colors border-b border-white/[0.03] fade-in">
             <div class="flex items-center justify-between mb-2">
                 <div class="flex items-center gap-2">
-                    <span class="text-white font-medium text-sm">BTC</span>
-                    <span class="text-gray-500 text-xs">5min</span>
+                    <span class="text-white font-medium text-sm">{trade.asset}</span>
+                    <span class="text-gray-500 text-xs">{trade.timeframe}</span>
                     <span class="font-mono text-[10px] text-gray-600">{trade.id}</span>
                 </div>
                 <div class="flex items-center gap-2">
@@ -336,7 +336,35 @@ async def api_pnl_data(request: Request):
 async def api_chart_data(request: Request):
     tracker = request.app.state.tracker
     pair_id = request.query_params.get("pair_id")
+    asset = request.query_params.get("asset")
+
+    if asset:
+        # Retourner les donnees du premier pair_id qui match l'asset
+        for pid, data in tracker.chart_data.items():
+            if data and asset.upper() in pid.upper():
+                return list(data)
+        return []
+
     return tracker.get_chart_data(pair_id=pair_id)
+
+
+@router.get("/api/available-assets")
+async def api_available_assets(request: Request):
+    """Liste des assets avec des donnees de chart disponibles."""
+    tracker = request.app.state.tracker
+    assets: dict[str, dict] = {}
+    for pid, data in tracker.chart_data.items():
+        if not data:
+            continue
+        # Extract asset from pair_id (format: BTC_5min_2026-...)
+        parts = pid.split("_")
+        if len(parts) >= 2:
+            asset = parts[0]
+            if asset not in assets:
+                assets[asset] = {"asset": asset, "pair_id": pid, "points": len(data)}
+            elif len(data) > assets[asset]["points"]:
+                assets[asset] = {"asset": asset, "pair_id": pid, "points": len(data)}
+    return list(assets.values())
 
 
 @router.get("/api/export/csv")
